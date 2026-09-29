@@ -72,7 +72,7 @@ Người dùng chỉ ghi nhận sự kiện (tạo đơn, nhận cọc, giao má
 | Layer | Lựa chọn |
 |---|---|
 | Frontend + Backend | Next.js (full-stack, TypeScript) |
-| ORM / Migration | Drizzle ORM |
+| ORM / Migration | Prisma |
 | Database | PostgreSQL (Neon free tier) — cần extension `btree_gist` |
 | Hosting | Netlify hoặc Cloudflare (kiểm tra điều khoản thương mại của gói free trước khi chọn) |
 | Backup | GitHub Actions chạy `pg_dump` định kỳ, lưu ra ngoài nhà cung cấp DB |
@@ -240,17 +240,19 @@ Kiểm kê, hao hụt, hư hỏng. Điều chỉnh giảm được tính là **c
 
 Ví dụ: Batch A 20 @ 180.000, Batch B 30 @ 195.000; khách mua 25 → giá vốn = 20×180.000 + 5×195.000.
 
-1. **Phân bổ khi tạo/sửa đơn** (không đợi hoàn tất): dùng để giữ hàng và chặn bán vượt tồn.
+Áp dụng **như nhau** cho cả `FilmSaleItems` (bán phim) và `PhotoPrintItems` có `film_quantity` (in ảnh dùng phim), vì cùng tiêu thụ chung một bể tồn kho.
+
+1. **Phân bổ khi tạo/sửa đơn** (không đợi hoàn tất): dùng để giữ hàng và chặn bán/dùng vượt tồn.
 2. Lấy batch theo `received_date ASC, id ASC`, khóa dòng bằng `SELECT ... FOR UPDATE` trong transaction.
 3. Tổng tồn của loại phim (cả hệ thống) < số lượng yêu cầu → **chặn**.
-4. **Sửa đơn** hoặc **hủy/xóa đơn**: giải phóng toàn bộ consumption cũ (trả lại `quantity_remaining`), rồi phân bổ lại từ tồn kho hiện tại. Không tính lại giá vốn của các đơn khác đã phân bổ trước đó.
-5. **Ghi nhận giá vốn (COGS)** vào báo cáo tại thời điểm đơn `COMPLETED`, cùng kỳ với doanh thu.
+4. **Sửa đơn** hoặc **hủy/xóa đơn** (dù là đơn phim hay đơn in ảnh): giải phóng toàn bộ consumption cũ (trả lại `quantity_remaining`), rồi phân bổ lại từ tồn kho hiện tại. Không tính lại giá vốn của các đơn khác đã phân bổ trước đó.
+5. **Ghi nhận giá vốn (COGS)** vào báo cáo tại thời điểm đơn `COMPLETED`, cùng kỳ với doanh thu — dù COGS đó đến từ đơn bán phim hay đơn in ảnh.
 
 ---
 
 ## 9. Photo Printing Domain
 
-Photo printing là dịch vụ, không quản lý nguyên liệu.
+Photo printing là dịch vụ, nhưng **có thể tiêu thụ phim từ kho chung** (ví dụ in ảnh Polaroid/Instax dùng phim của cửa hàng). Việc tiêu thụ này được ghi ở cấp từng dòng `PhotoPrintItems` (mục 11.7) theo đúng FIFO (mục 8.4), để đơn in ảnh cũng cập nhật tồn kho phim như đơn bán phim.
 
 ### PrintServices
 
@@ -425,23 +427,34 @@ Khi máy quá hạn nhưng chưa trả, hệ thống coi máy vẫn đang bị c
 
 ### 11.6 FilmBatchConsumptions
 
-| Field | Type |
-|---|---|
-| id | UUID |
-| film_sale_item_id | UUID |
-| film_batch_id | UUID |
-| quantity | INTEGER |
-| unit_cost | NUMERIC(14,0) — snapshot giá vốn của batch |
+Ghi nhận batch phim nào đã bị tiêu thụ bởi **một dòng đơn phim hoặc một dòng đơn in ảnh** (dùng chung một bảng vì cùng một bể tồn kho, cùng một quy tắc FIFO).
+
+| Field | Type | Ghi chú |
+|---|---|---|
+| id | UUID | |
+| film_sale_item_id | UUID NULL | Set nếu tiêu thụ từ `FilmSaleItems` |
+| photo_print_item_id | UUID NULL | Set nếu tiêu thụ từ `PhotoPrintItems` |
+| film_batch_id | UUID | |
+| quantity | INTEGER | |
+| unit_cost | NUMERIC(14,0) | Snapshot giá vốn của batch |
+
+Ràng buộc: đúng một trong hai cột `film_sale_item_id` / `photo_print_item_id` được set (CHECK).
 
 ### 11.7 PhotoPrintItems
 
-| Field | Type |
-|---|---|
-| id | UUID |
-| order_id | UUID |
-| print_service_id | UUID |
-| quantity | INTEGER |
-| unit_price | NUMERIC(14,0) — snapshot, cho phép sửa |
+In ảnh tiêu thụ phim, nên mỗi dòng in **có thể** gắn với một loại phim và số lượng phim dùng (không bắt buộc — một số dịch vụ in không dùng phim của cửa hàng, ví dụ khách gửi ảnh in giấy thường).
+
+| Field | Type | Ghi chú |
+|---|---|---|
+| id | UUID | |
+| order_id | UUID | |
+| print_service_id | UUID | |
+| quantity | INTEGER | Số lượng ảnh in |
+| unit_price | NUMERIC(14,0) | Snapshot, cho phép sửa |
+| film_type_id | UUID NULL | Loại phim tiêu thụ, nếu có |
+| film_quantity | INTEGER NULL | Số lượng phim tiêu thụ; bắt buộc nếu có `film_type_id` |
+
+Ràng buộc: `film_quantity IS NOT NULL ⟺ film_type_id IS NOT NULL`, và `film_quantity > 0`.
 
 ---
 
@@ -528,7 +541,7 @@ Revenue        = Σ order_revenue của các đơn COMPLETED trong kỳ
 Other Income   = Σ OtherTransactions loại INCOME
                + Σ amount_forfeited của cọc được xử lý trong kỳ
 
-Expense        = Film COGS (Σ FilmBatchConsumptions của đơn COMPLETED)
+Expense        = Film COGS (Σ FilmBatchConsumptions của đơn COMPLETED — cả đơn bán phim và đơn in ảnh)
                + Rental other_cost (Σ RentalItems.other_cost của đơn COMPLETED)
                + Film write-off (Σ điều chỉnh âm × unit_cost)
                + Σ OtherTransactions loại EXPENSE
@@ -579,7 +592,8 @@ Gợi ý danh mục ban đầu: Mặt bằng, Quảng cáo, Bảo trì máy, Mua
 | Trả máy | Đơn → `RETURNED`; ghi `returned_at`, cập nhật `booked_period`; tự tạo `CameraMovements` nếu trả khác cơ sở |
 | Xử lý cọc | Ghi `amount_refunded` / `amount_forfeited`; tạo `Payments` (OUT) cho phần hoàn |
 | Tạo/sửa đơn phim | Phân bổ FIFO, tạo `FilmBatchConsumptions`; chặn nếu vượt tồn |
-| Hủy/xóa đơn | Giải phóng tồn phim, ngừng chặn lịch máy (`is_blocking = false`) |
+| Tạo/sửa đơn in ảnh có dùng phim | Phân bổ FIFO như đơn bán phim (theo `film_type_id`/`film_quantity` của dòng in); chặn nếu vượt tồn |
+| Hủy/xóa đơn (phim hoặc in ảnh) | Giải phóng tồn phim đã phân bổ, ngừng chặn lịch máy nếu là đơn thuê (`is_blocking = false`) |
 | Hoàn tất đơn | Ghi `completed_at`; doanh thu, giá vốn, `other_cost` vào báo cáo kỳ đó |
 | Nhập phim | Tạo `FilmBatches` |
 | Chuyển cơ sở (máy) | Tạo `CameraMovements`; cập nhật `branch_id` |
@@ -659,10 +673,11 @@ Available / Rented / Maintenance Cameras (theo cơ sở); Film Inventory By Type
 ❌ Không cho phép double booking (ràng buộc ở database)
 ❌ Không cho phép thuê máy `RETIRED`
 
-**Film Sales**
+**Film Sales & Photo Printing (dùng phim)**
 ✅ FIFO, theo dõi giá vốn nhiều batch, kho chung hai cơ sở
-✅ Một đơn nhiều loại phim
-❌ Không cho phép bán vượt tồn
+✅ Một đơn nhiều loại phim (bán phim) hoặc gắn 1 loại phim/dòng in (in ảnh)
+✅ Đơn in ảnh dùng phim cũng cập nhật tồn kho như đơn bán phim
+❌ Không cho phép bán/dùng vượt tồn
 
 **Deposits**
 ✅ Cọc tiền / cọc tài sản / không cọc
@@ -713,3 +728,5 @@ ABMS là một Operational ERP tối giản cho hộ kinh doanh nhỏ: mọi ho�
 | Thu chi | Thêm `TransactionCategories`, `INCOME/EXPENSE`, liên kết đơn; thêm `other_cost` cho từng máy thuê; thêm `purchase_cost` cho máy |
 | Payments | Gộp `RENTAL/FILM/PRINT_PAYMENT` thành `ORDER_PAYMENT`; thêm `direction`, `payment_method` |
 | Kỹ thuật | Chốt stack, `NUMERIC(14,0)`, timezone, optimistic locking, partial unique index, backup, migration Excel |
+| Photo Printing | `PhotoPrintItems` thêm `film_type_id`/`film_quantity` tùy chọn; `FilmBatchConsumptions` tổng quát hóa để nhận cả từ đơn in ảnh, dùng chung FIFO với đơn bán phim |
+| ORM | Đổi từ Drizzle sang Prisma |
