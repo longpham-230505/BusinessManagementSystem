@@ -1,1 +1,8 @@
 PLAN.md
+node_modules/
+.next/
+out/
+.env
+.env.local
+*.dump
+.DS_Store

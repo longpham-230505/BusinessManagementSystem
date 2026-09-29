@@ -1,0 +1,555 @@
+// ============================================================
+// ABMS — Prisma schema (theo README v2)
+//
+// LƯU Ý QUAN TRỌNG — những gì Prisma KHÔNG diễn đạt được và cần
+// áp dụng bằng SQL thủ công sau khi chạy `prisma migrate dev`
+// (xem file đi kèm `manual_migration.sql`):
+//   1. Partial unique index cho order_code, asset_code
+//      (`WHERE deleted_at IS NULL`) — Prisma chỉ tạo unique toàn bảng.
+//   2. CHECK constraints (quantity_remaining >= 0, film_quantity > 0,
+//      đúng 1 trong 2 cột consumption được set...).
+//   3. Cột `booked_period` (tstzrange) — khai báo dạng Unsupported,
+//      Prisma Client không đọc/ghi được cột này; quản lý bằng trigger
+//      hoặc raw SQL.
+//   4. Exclusion constraint chống double booking (EXCLUDE USING gist).
+//   5. Extension `btree_gist`.
+//
+// Toàn bộ số tiền dùng Decimal(14,0) vì VND không có số lẻ.
+// Toàn bộ thời gian dùng Timestamptz (lưu UTC, hiển thị theo
+// Asia/Ho_Chi_Minh ở tầng ứng dụng).
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled connection — dùng lúc app chạy (xem Implementation Plan mục 3.1)
+  directUrl = env("DIRECT_URL")   // direct connection — dùng lúc migrate
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum CameraInstanceStatus {
+  IN_SERVICE
+  MAINTENANCE
+  RETIRED
+}
+
+enum OrderType {
+  RENTAL
+  FILM_SALE
+  PHOTO_PRINT
+}
+
+// Một enum dùng chung cho cả 2 luồng trạng thái (phân biệt bởi Order.orderType):
+//   RENTAL:            PENDING_BOOKING_DEPOSIT -> BOOKED -> RENTING -> RETURNED -> COMPLETED
+//   FILM_SALE/PHOTO_PRINT: PENDING -> PAID -> DELIVERING -> COMPLETED
+//   Cả hai:            CANCELLED (bất kỳ lúc nào)
+enum OrderStatus {
+  PENDING_BOOKING_DEPOSIT
+  BOOKED
+  RENTING
+  RETURNED
+  PENDING
+  PAID
+  DELIVERING
+  COMPLETED
+  CANCELLED
+}
+
+enum DepositKind {
+  BOOKING
+  SECURITY_CASH
+  SECURITY_ITEM
+  SECURITY_NONE
+}
+
+enum PaymentType {
+  BOOKING_DEPOSIT_RECEIVED
+  BOOKING_DEPOSIT_REFUNDED
+  SECURITY_DEPOSIT_RECEIVED
+  SECURITY_DEPOSIT_REFUNDED
+  ORDER_PAYMENT
+  ORDER_REFUND
+  SHIPPING_FEE_RECEIVED
+  SHIPPING_FEE_PAID
+}
+
+enum PaymentDirection {
+  IN
+  OUT
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  OTHER
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+  STATUS_CHANGE
+}
+
+// ============================================================
+// 5. USERS
+// ============================================================
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  displayName  String   @map("display_name") @db.VarChar(255)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+// ============================================================
+// 6. BRANCHES
+// ============================================================
+
+model Branch {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @db.VarChar(255)
+  address   String?   @db.Text
+  notes     String?   @db.Text
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  cameraInstances       CameraInstance[]
+  orders                Order[]            @relation("OrderBranch")
+  rentalDetailsReturned RentalDetail[]     @relation("ReturnBranch")
+  movementsFrom         CameraMovement[]   @relation("MovementFrom")
+  movementsTo           CameraMovement[]   @relation("MovementTo")
+  otherTransactions     OtherTransaction[]
+
+  @@map("branches")
+}
+
+// ============================================================
+// 7. CAMERA DOMAIN
+// ============================================================
+
+model CameraModel {
+  id                     String    @id @default(uuid()) @db.Uuid
+  name                   String    @db.VarChar(255)
+  description            String?   @db.Text
+  defaultBookingDeposit  Decimal   @default(40000) @map("default_booking_deposit") @db.Decimal(14, 0)
+  defaultPrice1day       Decimal?  @map("default_price_1day") @db.Decimal(14, 0)
+  defaultPriceCombo3     Decimal?  @map("default_price_combo3") @db.Decimal(14, 0)
+  active                 Boolean   @default(true)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt              DateTime? @map("deleted_at") @db.Timestamptz
+
+  instances CameraInstance[]
+
+  @@map("camera_models")
+}
+
+model CameraInstance {
+  id            String               @id @default(uuid()) @db.Uuid
+  cameraModelId String               @map("camera_model_id") @db.Uuid
+  assetCode     String               @map("asset_code") @db.VarChar(50)
+  branchId      String               @map("branch_id") @db.Uuid
+  price1day     Decimal              @map("price_1day") @db.Decimal(14, 0)
+  priceCombo3   Decimal              @map("price_combo3") @db.Decimal(14, 0)
+  filmRemaining Int                  @default(0) @map("film_remaining")
+  status        CameraInstanceStatus @default(IN_SERVICE)
+  purchaseCost  Decimal?             @map("purchase_cost") @db.Decimal(14, 0)
+  purchaseDate  DateTime?            @map("purchase_date") @db.Date
+  notes         String?              @db.Text
+  active        Boolean              @default(true)
+  version       Int                  @default(1)
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt     DateTime?            @map("deleted_at") @db.Timestamptz
+
+  cameraModel CameraModel      @relation(fields: [cameraModelId], references: [id])
+  branch      Branch           @relation(fields: [branchId], references: [id])
+  movements   CameraMovement[]
+  rentalItems RentalItem[]
+
+  // NOTE: unique thật sự là partial (WHERE deleted_at IS NULL) — xem manual_migration.sql.
+  // @@unique ở đây chỉ để Prisma biết đây là khóa tra cứu hay dùng, KHÔNG migrate constraint này lên DB
+  // (xoá dòng @@unique dưới nếu không muốn Prisma tạo unique toàn bảng trước khi patch thủ công).
+  @@index([branchId])
+  @@index([cameraModelId])
+  @@map("camera_instances")
+}
+
+model CameraMovement {
+  id               String   @id @default(uuid()) @db.Uuid
+  cameraInstanceId String   @map("camera_instance_id") @db.Uuid
+  fromBranchId     String   @map("from_branch_id") @db.Uuid
+  toBranchId       String   @map("to_branch_id") @db.Uuid
+  orderId          String?  @map("order_id") @db.Uuid
+  movedAt          DateTime @map("moved_at") @db.Timestamptz
+  notes            String?  @db.Text
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  cameraInstance CameraInstance @relation(fields: [cameraInstanceId], references: [id])
+  fromBranch     Branch         @relation("MovementFrom", fields: [fromBranchId], references: [id])
+  toBranch       Branch         @relation("MovementTo", fields: [toBranchId], references: [id])
+  order          Order?         @relation(fields: [orderId], references: [id])
+
+  @@index([cameraInstanceId])
+  @@index([orderId])
+  @@map("camera_movements")
+}
+
+// ============================================================
+// 8. FILM INVENTORY DOMAIN (một bể chung cho mọi cơ sở)
+// ============================================================
+
+model FilmType {
+  id                String    @id @default(uuid()) @db.Uuid
+  name              String    @db.VarChar(255)
+  defaultSalePrice  Decimal   @map("default_sale_price") @db.Decimal(14, 0)
+  active            Boolean   @default(true)
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz
+
+  batches         FilmBatch[]
+  filmSaleItems   FilmSaleItem[]
+  photoPrintItems PhotoPrintItem[]
+
+  @@map("film_types")
+}
+
+model FilmBatch {
+  id                String    @id @default(uuid()) @db.Uuid
+  filmTypeId        String    @map("film_type_id") @db.Uuid
+  quantityOriginal  Int       @map("quantity_original")
+  quantityRemaining Int       @map("quantity_remaining") // CHECK >= 0 — xem manual_migration.sql
+  unitCost          Decimal   @map("unit_cost") @db.Decimal(14, 0)
+  receivedDate      DateTime  @map("received_date") @db.Date
+  notes             String?   @db.Text
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz
+
+  filmType     FilmType                @relation(fields: [filmTypeId], references: [id])
+  adjustments  FilmStockAdjustment[]
+  consumptions FilmBatchConsumption[]
+
+  // FIFO cần quét theo received_date ASC, id ASC — index hỗ trợ việc này
+  @@index([filmTypeId, receivedDate, id])
+  @@map("film_batches")
+}
+
+model FilmStockAdjustment {
+  id             String   @id @default(uuid()) @db.Uuid
+  filmBatchId    String   @map("film_batch_id") @db.Uuid
+  quantityDelta  Int      @map("quantity_delta") // âm = hao hụt, dương = tìm thấy thêm
+  reason         String   @db.Text
+  adjustedAt     DateTime @map("adjusted_at") @db.Timestamptz
+
+  filmBatch FilmBatch @relation(fields: [filmBatchId], references: [id])
+
+  @@index([filmBatchId])
+  @@map("film_stock_adjustments")
+}
+
+// ============================================================
+// 9. PHOTO PRINTING DOMAIN
+// ============================================================
+
+model PrintService {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @db.VarChar(255)
+  unitPrice Decimal   @map("unit_price") @db.Decimal(14, 0)
+  active    Boolean   @default(true)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  photoPrintItems PhotoPrintItem[]
+
+  @@map("print_services")
+}
+
+// ============================================================
+// 10. CUSTOMERS
+// ============================================================
+
+model Customer {
+  id             String    @id @default(uuid()) @db.Uuid
+  name           String    @db.VarChar(255)
+  phone          String?   @db.VarChar(30) // index, KHÔNG unique — cảnh báo trùng ở tầng ứng dụng
+  contactChannel String?   @map("contact_channel") @db.VarChar(50)
+  contactHandle  String?   @map("contact_handle") @db.VarChar(255)
+  isFlagged      Boolean   @default(false) @map("is_flagged")
+  notes          String?   @db.Text
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
+
+  orders Order[]
+
+  @@index([phone])
+  @@map("customers")
+}
+
+// ============================================================
+// 11. ORDER MANAGEMENT
+// ============================================================
+
+model Order {
+  id              String      @id @default(uuid()) @db.Uuid
+  orderCode       String      @map("order_code") @db.VarChar(30) // unique thật là partial — xem manual_migration.sql
+  orderType       OrderType   @map("order_type")
+  status          OrderStatus
+  customerId      String      @map("customer_id") @db.Uuid
+  branchId        String      @map("branch_id") @db.Uuid
+  orderDate       DateTime    @map("order_date") @db.Timestamptz
+  shippingFee     Decimal     @default(0) @map("shipping_fee") @db.Decimal(14, 0)
+  discountAmount  Decimal     @default(0) @map("discount_amount") @db.Decimal(14, 0) // CHECK <= subtotal — kiểm tra ở tầng ứng dụng (subtotal không lưu trong DB)
+  surchargeAmount Decimal     @default(0) @map("surcharge_amount") @db.Decimal(14, 0)
+  surchargeNote   String?     @map("surcharge_note") @db.Text
+  notes           String?     @db.Text
+  completedAt     DateTime?   @map("completed_at") @db.Timestamptz
+  cancelledAt     DateTime?   @map("cancelled_at") @db.Timestamptz
+  version         Int         @default(1)
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt       DateTime?   @map("deleted_at") @db.Timestamptz
+
+  customer        Customer         @relation(fields: [customerId], references: [id])
+  branch          Branch           @relation("OrderBranch", fields: [branchId], references: [id])
+  rentalDetail    RentalDetail?
+  rentalItems     RentalItem[]
+  filmSaleItems   FilmSaleItem[]
+  photoPrintItems PhotoPrintItem[]
+  deposits        Deposit[]
+  payments        Payment[]
+  otherTransactions OtherTransaction[]
+  cameraMovements CameraMovement[]
+
+  @@index([orderType, status])
+  @@index([customerId])
+  @@index([branchId])
+  @@index([orderDate])
+  @@map("orders")
+}
+
+// 1–1 với Order khi orderType = RENTAL
+model RentalDetail {
+  orderId           String    @id @map("order_id") @db.Uuid
+  pickupAt          DateTime  @map("pickup_at") @db.Timestamptz
+  returnDueAt       DateTime  @map("return_due_at") @db.Timestamptz
+  returnedAt        DateTime? @map("returned_at") @db.Timestamptz
+  rentalDays        Int       @map("rental_days")
+  returnBranchId    String?   @map("return_branch_id") @db.Uuid
+  idCardReceivedAt  DateTime? @map("id_card_received_at") @db.Timestamptz
+  idCardReturnedAt  DateTime? @map("id_card_returned_at") @db.Timestamptz
+
+  order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  returnBranch Branch? @relation("ReturnBranch", fields: [returnBranchId], references: [id])
+
+  @@map("rental_details")
+}
+
+// Mỗi dòng = một máy trong đơn thuê
+model RentalItem {
+  id                String   @id @default(uuid()) @db.Uuid
+  orderId           String   @map("order_id") @db.Uuid
+  cameraInstanceId  String   @map("camera_instance_id") @db.Uuid
+  unitPrice1day     Decimal  @map("unit_price_1day") @db.Decimal(14, 0)
+  unitPriceCombo3   Decimal  @map("unit_price_combo3") @db.Decimal(14, 0)
+  combo3Count       Int      @map("combo3_count")
+  singleDayCount    Int      @map("single_day_count")
+  rentalFee         Decimal  @map("rental_fee") @db.Decimal(14, 0)
+  otherCost         Decimal  @default(0) @map("other_cost") @db.Decimal(14, 0)
+  otherCostNote     String?  @map("other_cost_note") @db.Text
+  isBlocking        Boolean  @default(true) @map("is_blocking")
+
+  // Cột thật (tstzrange) được quản lý bằng trigger/raw SQL — xem manual_migration.sql.
+  // Prisma Client KHÔNG đọc/ghi được trường Unsupported này.
+  bookedPeriod Unsupported("tstzrange")? @map("booked_period")
+
+  order          Order          @relation(fields: [orderId], references: [id])
+  cameraInstance CameraInstance @relation(fields: [cameraInstanceId], references: [id])
+
+  @@index([orderId])
+  @@index([cameraInstanceId])
+  @@map("rental_items")
+}
+
+// Mỗi dòng = một loại phim trong đơn bán phim
+model FilmSaleItem {
+  id         String  @id @default(uuid()) @db.Uuid
+  orderId    String  @map("order_id") @db.Uuid
+  filmTypeId String  @map("film_type_id") @db.Uuid
+  quantity   Int // CHECK > 0
+  salePrice  Decimal @map("sale_price") @db.Decimal(14, 0)
+
+  order        Order                   @relation(fields: [orderId], references: [id])
+  filmType     FilmType                @relation(fields: [filmTypeId], references: [id])
+  consumptions FilmBatchConsumption[]
+
+  @@index([orderId])
+  @@map("film_sale_items")
+}
+
+// Dùng chung cho cả FilmSaleItems và PhotoPrintItems (cùng một bể tồn kho, cùng FIFO).
+// Đúng 1 trong 2 cột filmSaleItemId / photoPrintItemId được set — CHECK ở manual_migration.sql.
+model FilmBatchConsumption {
+  id               String  @id @default(uuid()) @db.Uuid
+  filmSaleItemId   String? @map("film_sale_item_id") @db.Uuid
+  photoPrintItemId String? @map("photo_print_item_id") @db.Uuid
+  filmBatchId      String  @map("film_batch_id") @db.Uuid
+  quantity         Int
+  unitCost         Decimal @map("unit_cost") @db.Decimal(14, 0)
+
+  filmSaleItem   FilmSaleItem?   @relation(fields: [filmSaleItemId], references: [id])
+  photoPrintItem PhotoPrintItem? @relation(fields: [photoPrintItemId], references: [id])
+  filmBatch      FilmBatch       @relation(fields: [filmBatchId], references: [id])
+
+  @@index([filmSaleItemId])
+  @@index([photoPrintItemId])
+  @@index([filmBatchId])
+  @@map("film_batch_consumptions")
+}
+
+// Mỗi dòng = một dịch vụ in trong đơn in ảnh; có thể gắn 1 loại phim tiêu thụ (không bắt buộc)
+model PhotoPrintItem {
+  id              String  @id @default(uuid()) @db.Uuid
+  orderId         String  @map("order_id") @db.Uuid
+  printServiceId  String  @map("print_service_id") @db.Uuid
+  quantity        Int
+  unitPrice       Decimal @map("unit_price") @db.Decimal(14, 0)
+  filmTypeId      String? @map("film_type_id") @db.Uuid
+  filmQuantity    Int?    @map("film_quantity") // CHECK: (filmQuantity IS NOT NULL) = (filmTypeId IS NOT NULL) AND filmQuantity > 0
+
+  order        Order                   @relation(fields: [orderId], references: [id])
+  printService PrintService            @relation(fields: [printServiceId], references: [id])
+  filmType     FilmType?               @relation(fields: [filmTypeId], references: [id])
+  consumptions FilmBatchConsumption[]
+
+  @@index([orderId])
+  @@map("photo_print_items")
+}
+
+// ============================================================
+// 12. DEPOSITS
+// ============================================================
+
+model Deposit {
+  id               String    @id @default(uuid()) @db.Uuid
+  orderId          String    @map("order_id") @db.Uuid
+  kind             DepositKind
+  amountReceived   Decimal   @default(0) @map("amount_received") @db.Decimal(14, 0)
+  amountRefunded   Decimal   @default(0) @map("amount_refunded") @db.Decimal(14, 0)
+  amountForfeited  Decimal   @default(0) @map("amount_forfeited") @db.Decimal(14, 0)
+  itemDescription  String?   @map("item_description") @db.Text
+  itemReturnedAt   DateTime? @map("item_returned_at") @db.Timestamptz
+  receivedAt       DateTime  @map("received_at") @db.Timestamptz
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz
+  resolutionNote   String?   @map("resolution_note") @db.Text
+
+  order    Order     @relation(fields: [orderId], references: [id])
+  payments Payment[]
+
+  // CHECK amount_refunded + amount_forfeited <= amount_received — xem manual_migration.sql
+  @@index([orderId])
+  @@map("deposits")
+}
+
+// ============================================================
+// 13. PAYMENTS & CASH FLOW
+// ============================================================
+
+model Payment {
+  id            String            @id @default(uuid()) @db.Uuid
+  orderId       String            @map("order_id") @db.Uuid
+  depositId     String?           @map("deposit_id") @db.Uuid
+  paymentType   PaymentType       @map("payment_type")
+  direction     PaymentDirection
+  amount        Decimal           @db.Decimal(14, 0)
+  paymentMethod PaymentMethod     @default(CASH) @map("payment_method")
+  paymentDate   DateTime          @map("payment_date") @db.Timestamptz
+  notes         String?           @db.Text
+  deletedAt     DateTime?         @map("deleted_at") @db.Timestamptz
+
+  order   Order    @relation(fields: [orderId], references: [id])
+  deposit Deposit? @relation(fields: [depositId], references: [id])
+
+  @@index([orderId])
+  @@index([depositId])
+  @@index([paymentDate])
+  @@map("payments")
+}
+
+// ============================================================
+// 14. FINANCIAL SYSTEM
+// ============================================================
+
+model OtherTransaction {
+  id                String           @id @default(uuid()) @db.Uuid
+  branchId          String?          @map("branch_id") @db.Uuid // NULL = chi phí chung
+  orderId           String?          @map("order_id") @db.Uuid
+  categoryId        String           @map("category_id") @db.Uuid
+  transactionType   TransactionType  @map("transaction_type")
+  amount            Decimal          @db.Decimal(14, 0)
+  description       String?          @db.Text
+  transactionDate   DateTime         @map("transaction_date") @db.Timestamptz
+  deletedAt         DateTime?        @map("deleted_at") @db.Timestamptz
+
+  branch   Branch?              @relation(fields: [branchId], references: [id])
+  order    Order?               @relation(fields: [orderId], references: [id])
+  category TransactionCategory  @relation(fields: [categoryId], references: [id])
+
+  @@index([branchId])
+  @@index([orderId])
+  @@index([transactionDate])
+  @@map("other_transactions")
+}
+
+model TransactionCategory {
+  id              String           @id @default(uuid()) @db.Uuid
+  name            String           @db.VarChar(255)
+  transactionType TransactionType  @map("transaction_type")
+  active          Boolean          @default(true)
+
+  transactions OtherTransaction[]
+
+  @@map("transaction_categories")
+}
+
+// ============================================================
+// 16. AUDIT SYSTEM
+// ============================================================
+
+model AuditLog {
+  id         String      @id @default(uuid()) @db.Uuid
+  userId     String      @map("user_id") @db.Uuid
+  entityType String      @map("entity_type") @db.VarChar(100)
+  entityId   String       @map("entity_id") @db.Uuid
+  action     AuditAction
+  oldValue   Json?       @map("old_value") @db.JsonB
+  newValue   Json?       @map("new_value") @db.JsonB
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
