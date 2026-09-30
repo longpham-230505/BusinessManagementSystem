@@ -11,11 +11,7 @@ const NAV_ITEMS = [
   { label: "Cài đặt", href: "/settings" },
 ];
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
   return (
     <div className="min-h-screen md:flex">
