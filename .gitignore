@@ -5,3 +5,4 @@ out/
 .env.local
 *.dump
 .DS_Store
+*.tsbuildinfo

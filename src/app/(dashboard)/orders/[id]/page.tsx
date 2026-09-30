@@ -1,8 +1,125 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Prisma } from "@prisma/client";
-import { prisma } from "@/server/db";
-import { rentalEvent } from "@/server/rental-actions";
-const money=(x:{toString():string})=>`${Number(x).toLocaleString("vi-VN")} ₫`;
-function EventForm({id,event,children,label}:{id:string;event:string;children?:React.ReactNode;label:string}){return <form action={rentalEvent} className="flex flex-wrap items-end gap-3"><input type="hidden" name="orderId" value={id}/><input type="hidden" name="event" value={event}/>{children}<button className="rounded bg-accent px-3 py-2 text-sm text-paper">{label}</button></form>}
-export default async function RentalDetailPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{notice?:string;error?:string}>}){const [{id},q]=await Promise.all([params,searchParams]);const [order,branches]=await Promise.all([prisma.order.findFirst({where:{id,orderType:"RENTAL",deletedAt:null},include:{customer:true,branch:true,rentalDetail:true,rentalItems:{include:{cameraInstance:{include:{branch:true,cameraModel:true}}}},deposits:true}}),prisma.branch.findMany({where:{deletedAt:null},orderBy:{name:"asc"}})]);if(!order||!order.rentalDetail)notFound();const total=order.rentalItems.reduce((sum,item)=>sum.plus(item.rentalFee),new Prisma.Decimal(0));const maintenance=order.rentalItems.filter(x=>x.cameraInstance.status==="MAINTENANCE");const transfer=order.rentalItems.filter(x=>x.cameraInstance.branchId!==order.branchId);return <div className="max-w-5xl space-y-5"><Link href="/orders" className="text-sm text-accent underline">← Đơn thuê</Link><header><h1 className="text-2xl font-semibold">{order.orderCode}</h1><p className="text-sm text-ink/60">{order.customer.name} · {order.branch.name} · <b>{order.status}</b></p></header>{q.notice&&<p className="rounded bg-green-50 p-3 text-sm text-green-800">{q.notice}</p>}{q.error&&<p className="rounded bg-red-50 p-3 text-sm text-red-700">{q.error}</p>}{maintenance.length>0&&<p className="rounded bg-amber-50 p-3 text-sm text-amber-900">Cảnh báo: {maintenance.map(x=>x.cameraInstance.assetCode).join(", ")} đang ở trạng thái bảo trì.</p>}{transfer.length>0&&<p className="rounded bg-amber-50 p-3 text-sm text-amber-900">Camera Transfer Required: {transfer.map(x=>x.cameraInstance.assetCode).join(", ")} đang không ở cơ sở giao máy.</p>}<div className="grid gap-5 md:grid-cols-2"><section className="rounded border border-line bg-white p-5"><h2 className="font-medium">Lịch thuê</h2><p className="mt-2 text-sm">{order.rentalDetail.rentalDays} ngày · Nhận {order.rentalDetail.pickupAt.toLocaleString("vi-VN")} · Hạn trả {order.rentalDetail.returnDueAt.toLocaleString("vi-VN")}</p><p className="mt-1 text-sm">Tổng tiền thuê: <b>{money(total)}</b></p></section><section className="rounded border border-line bg-white p-5"><h2 className="font-medium">Máy thuê</h2>{order.rentalItems.map(i=><p key={i.id} className="mt-2 text-sm"><b>{i.cameraInstance.assetCode}</b> · {i.cameraInstance.cameraModel.name}: {i.combo3Count} combo + {i.singleDayCount} ngày = {money(i.rentalFee)}</p>)}</section></div><section className="space-y-4 rounded border border-line bg-white p-5"><h2 className="font-medium">Thao tác vòng đời</h2>{order.status==="PENDING_BOOKING_DEPOSIT"&&<EventForm id={id} event="booking" label="Nhận cọc giữ chỗ"><label className="text-sm">Số tiền<input required name="amount" type="number" min="0" className="ml-2 w-36 rounded border border-line p-2"/></label></EventForm>}{order.status==="BOOKED"&&<EventForm id={id} event="start" label="Giao máy"><label className="text-sm">Cọc bảo đảm<select name="securityKind" className="ml-2 rounded border border-line p-2"><option value="SECURITY_NONE">Không cọc</option><option value="SECURITY_CASH">Tiền mặt</option><option value="SECURITY_ITEM">Tài sản</option></select></label><label className="text-sm">Tiền<input name="amount" defaultValue="0" type="number" min="0" className="ml-2 w-28 rounded border border-line p-2"/></label><label className="text-sm">Mô tả tài sản<input name="itemDescription" className="ml-2 rounded border border-line p-2"/></label></EventForm>}{order.status==="RENTING"&&<EventForm id={id} event="return" label="Nhận trả máy"><label className="text-sm">Cơ sở nhận<select required name="returnBranchId" className="ml-2 rounded border border-line p-2">{branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label></EventForm>}{order.status==="RETURNED"&&<><div className="space-y-2">{order.deposits.filter(d=>!d.resolvedAt).map(d=><EventForm key={d.id} id={id} event="resolve" label="Xử lý cọc"><input type="hidden" name="depositId" value={d.id}/><span className="text-sm">{d.kind}: đã nhận {money(d.amountReceived)}</span><label className="text-sm">Hoàn <input name="refunded" type="number" min="0" defaultValue="0" className="ml-1 w-24 rounded border border-line p-2"/></label><label className="text-sm">Giữ <input name="forfeited" type="number" min="0" defaultValue="0" className="ml-1 w-24 rounded border border-line p-2"/></label><input name="resolutionNote" placeholder="Lý do" className="rounded border border-line p-2 text-sm"/></EventForm>)}</div><EventForm id={id} event="complete" label="Hoàn tất đơn"/></>}{!["COMPLETED","CANCELLED"].includes(order.status)&&<EventForm id={id} event="cancel" label="Hủy đơn"/>}</section></div>}
+import {
+  Alert,
+  FlashMessages,
+  type FlashSearchParams,
+} from "@/components/flash-messages";
+import { formatVnDateTime } from "@/lib/datetime";
+import { ORDER_STATUS_LABEL } from "@/lib/labels";
+import { formatVnd } from "@/lib/money";
+import { listBranches } from "@/server/queries/master-data.queries";
+import {
+  findRentalOrderDetail,
+  type RentalOrderDetail,
+} from "@/server/queries/rental-orders.queries";
+import { sumRentalFees } from "@/server/services/rental-pricing";
+import { LifecyclePanel } from "./lifecycle-panel";
+
+/** Chỉ trước khi giao máy thì vị trí máy mới cần khớp với cơ sở giao. */
+const PRE_PICKUP_STATUSES = ["PENDING_BOOKING_DEPOSIT", "BOOKED"];
+
+export default async function RentalOrderDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<FlashSearchParams>;
+}) {
+  const [{ id }, flash] = await Promise.all([params, searchParams]);
+  const [order, branches] = await Promise.all([
+    findRentalOrderDetail(id),
+    listBranches(),
+  ]);
+  if (!order?.rentalDetail) notFound();
+
+  const maintenanceCodes = findAssetCodes(
+    order,
+    (item) => item.cameraInstance.status === "MAINTENANCE"
+  );
+  const transferCodes = PRE_PICKUP_STATUSES.includes(order.status)
+    ? findAssetCodes(
+        order,
+        (item) => item.cameraInstance.branchId !== order.branchId
+      )
+    : [];
+
+  return (
+    <div className="max-w-5xl space-y-5">
+      <Link href="/orders" className="text-sm text-accent underline">
+        ← Đơn thuê
+      </Link>
+
+      <header>
+        <h1 className="text-2xl font-semibold">{order.orderCode}</h1>
+        <p className="text-sm text-ink/60">
+          {order.customer.name} · {order.branch.name} ·{" "}
+          <b>{ORDER_STATUS_LABEL[order.status]}</b>
+        </p>
+      </header>
+
+      <FlashMessages notice={flash.notice} error={flash.error} />
+      {maintenanceCodes.length > 0 && (
+        <Alert tone="warning">
+          Cảnh báo: {maintenanceCodes.join(", ")} đang ở trạng thái bảo trì.
+        </Alert>
+      )}
+      {transferCodes.length > 0 && (
+        <Alert tone="warning">
+          Camera Transfer Required: {transferCodes.join(", ")} đang không ở cơ
+          sở giao máy.
+        </Alert>
+      )}
+
+      <div className="grid gap-5 md:grid-cols-2">
+        <ScheduleCard order={order} />
+        <CamerasCard order={order} />
+      </div>
+
+      <LifecyclePanel order={order} branches={branches} />
+    </div>
+  );
+}
+
+function findAssetCodes(
+  order: RentalOrderDetail,
+  predicate: (item: RentalOrderDetail["rentalItems"][number]) => boolean
+): string[] {
+  return order.rentalItems
+    .filter(predicate)
+    .map((item) => item.cameraInstance.assetCode);
+}
+
+function ScheduleCard({ order }: { order: RentalOrderDetail }) {
+  const { rentalDetail } = order;
+  if (!rentalDetail) return null;
+
+  return (
+    <section className="rounded border border-line bg-white p-5">
+      <h2 className="font-medium">Lịch thuê</h2>
+      <p className="mt-2 text-sm">
+        {rentalDetail.rentalDays} ngày · Nhận{" "}
+        {formatVnDateTime(rentalDetail.pickupAt)} · Hạn trả{" "}
+        {formatVnDateTime(rentalDetail.returnDueAt)}
+      </p>
+      <p className="mt-1 text-sm">
+        Tổng tiền thuê: <b>{formatVnd(sumRentalFees(order.rentalItems))}</b>
+      </p>
+    </section>
+  );
+}
+
+function CamerasCard({ order }: { order: RentalOrderDetail }) {
+  return (
+    <section className="rounded border border-line bg-white p-5">
+      <h2 className="font-medium">Máy thuê</h2>
+      {order.rentalItems.map((item) => (
+        <p key={item.id} className="mt-2 text-sm">
+          <b>{item.cameraInstance.assetCode}</b> ·{" "}
+          {item.cameraInstance.cameraModel.name}: {item.combo3Count} combo +{" "}
+          {item.singleDayCount} ngày = {formatVnd(item.rentalFee)}
+        </p>
+      ))}
+    </section>
+  );
+}

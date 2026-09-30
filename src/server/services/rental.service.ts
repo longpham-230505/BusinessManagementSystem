@@ -1,77 +1,319 @@
-import { DepositKind, OrderStatus, PaymentDirection, PaymentType, Prisma } from "@prisma/client";
+import { OrderStatus, OrderType, type Prisma } from "@prisma/client";
+import { ORDER_STATUS_LABEL } from "@/lib/labels";
+import { prisma } from "@/server/db";
+import { BusinessRuleError } from "@/server/errors";
+import {
+  recordBookingDeposit,
+  recordSecurityDeposit,
+  settleDeposit,
+  type SecurityDepositKind,
+} from "@/server/services/deposit.service";
+import { generateRentalOrderCode } from "@/server/services/order-code";
+import {
+  loadRentableCameras,
+  type RentableCamera,
+} from "@/server/services/rental-availability";
+import {
+  calculateRentalDays,
+  calculateRentalPrice,
+} from "@/server/services/rental-pricing";
+import type { Db } from "@/server/services/types";
 
-export class RentalRuleError extends Error {}
+/**
+ * Vòng đời đơn thuê:
+ *
+ *   PENDING_BOOKING_DEPOSIT → BOOKED → RENTING → RETURNED → COMPLETED
+ *
+ * Đơn có thể chuyển sang CANCELLED từ bất kỳ trạng thái nào chưa kết thúc.
+ * Mỗi hàm public bên dưới là MỘT sự kiện nghiệp vụ và chạy trong MỘT transaction.
+ */
 
-type Db = Prisma.TransactionClient;
+/** Trạng thái chưa kết thúc — những trạng thái còn được phép hủy đơn. */
+const CANCELLABLE_STATUSES: OrderStatus[] = [
+  OrderStatus.PENDING_BOOKING_DEPOSIT,
+  OrderStatus.BOOKED,
+  OrderStatus.RENTING,
+  OrderStatus.RETURNED,
+];
 
-export function rentalPricing(days: number, price1day: Prisma.Decimal | number, priceCombo3: Prisma.Decimal | number) {
-  if (!Number.isInteger(days) || days <= 0) throw new RentalRuleError("Thời gian thuê phải ít nhất một ngày.");
-  const combo3Count = Math.floor(days / 3);
-  const singleDayCount = days % 3;
-  const rentalFee = new Prisma.Decimal(priceCombo3).mul(combo3Count).add(new Prisma.Decimal(price1day).mul(singleDayCount));
-  return { combo3Count, singleDayCount, rentalFee };
-}
+// ---------------------------------------------------------------------------
+// Chuyển trạng thái
+// ---------------------------------------------------------------------------
 
-export function rentalDays(pickupAt: Date, returnDueAt: Date) {
-  const diff = returnDueAt.getTime() - pickupAt.getTime();
-  if (diff <= 0) throw new RentalRuleError("Thời điểm trả phải sau thời điểm nhận máy.");
-  return Math.ceil(diff / (24 * 60 * 60 * 1000));
-}
-
-export async function assertRentalAvailability(db: Db, cameraIds: string[], pickupAt: Date, returnDueAt: Date) {
-  const cameras = await db.cameraInstance.findMany({ where: { id: { in: cameraIds }, deletedAt: null }, select: { id: true, assetCode: true, status: true } });
-  if (cameras.length !== cameraIds.length) throw new RentalRuleError("Một hoặc nhiều máy không còn tồn tại.");
-  const retired = cameras.find((camera) => camera.status === "RETIRED");
-  if (retired) throw new RentalRuleError(`Máy ${retired.assetCode} đã ngừng sử dụng và không thể cho thuê.`);
-
-  const conflicts = await db.rentalItem.findMany({
-    where: { cameraInstanceId: { in: cameraIds }, isBlocking: true, order: { rentalDetail: { pickupAt: { lt: returnDueAt }, OR: [{ returnedAt: { gt: pickupAt } }, { returnedAt: null, returnDueAt: { gt: pickupAt } }] } } },
-    include: { cameraInstance: { select: { assetCode: true } } },
+/**
+ * Chuyển đơn thuê từ một trong các trạng thái `allowedFrom` sang `to`.
+ *
+ * Việc kiểm tra và cập nhật diễn ra trong MỘT câu UPDATE có điều kiện, nên nếu
+ * người dùng bấm hai lần hoặc mở hai tab thì chỉ một thao tác được áp dụng.
+ */
+async function transitionOrder(
+  db: Db,
+  orderId: string,
+  allowedFrom: OrderStatus[],
+  to: OrderStatus,
+  extraData: Prisma.OrderUpdateManyMutationInput = {}
+) {
+  const { count } = await db.order.updateMany({
+    where: {
+      id: orderId,
+      orderType: OrderType.RENTAL,
+      deletedAt: null,
+      status: { in: allowedFrom },
+    },
+    data: { status: to, ...extraData },
   });
-  if (conflicts.length) throw new RentalRuleError(`Máy ${conflicts.map((item) => item.cameraInstance.assetCode).join(", ")} đã có lịch thuê trùng thời gian.`);
-  return cameras;
-}
 
-export async function nextRentalOrderCode(db: Db, now = new Date()) {
-  const date = `${String(now.getUTCFullYear()).slice(-2)}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(now.getUTCDate()).padStart(2, "0")}`;
-  const prefix = `RNT-${date}-`;
-  const count = await db.order.count({ where: { orderCode: { startsWith: prefix } } });
-  return `${prefix}${String(count + 1).padStart(3, "0")}`;
-}
-
-export async function receiveBookingDeposit(db: Db, orderId: string, amount: Prisma.Decimal, receivedAt: Date) {
-  const existing = await db.deposit.findFirst({ where: { orderId, kind: "BOOKING" } });
-  if (existing) throw new RentalRuleError("Đơn đã có cọc giữ chỗ.");
-  const deposit = await db.deposit.create({ data: { orderId, kind: "BOOKING", amountReceived: amount, receivedAt } });
-  await db.payment.create({ data: { orderId, depositId: deposit.id, paymentType: "BOOKING_DEPOSIT_RECEIVED", direction: PaymentDirection.IN, amount, paymentDate: receivedAt } });
-  await db.order.update({ where: { id: orderId }, data: { status: OrderStatus.BOOKED } });
-}
-
-export async function startRental(db: Db, orderId: string, securityKind: DepositKind, amount: Prisma.Decimal, itemDescription: string | null, at: Date) {
-  if (securityKind === "BOOKING") throw new RentalRuleError("Loại cọc bảo đảm không hợp lệ.");
-  const existing = await db.deposit.findFirst({ where: { orderId, kind: { in: ["SECURITY_CASH", "SECURITY_ITEM", "SECURITY_NONE"] } } });
-  if (existing) throw new RentalRuleError("Đơn đã có cọc bảo đảm.");
-  if ((securityKind === "SECURITY_ITEM" || securityKind === "SECURITY_NONE") && !amount.isZero()) throw new RentalRuleError("Cọc tài sản hoặc không cọc phải có giá trị tiền mặt bằng 0.");
-  const deposit = await db.deposit.create({ data: { orderId, kind: securityKind, amountReceived: amount, itemDescription, receivedAt: at } });
-  if (securityKind === "SECURITY_CASH" && amount.gt(0)) await db.payment.create({ data: { orderId, depositId: deposit.id, paymentType: PaymentType.SECURITY_DEPOSIT_RECEIVED, direction: PaymentDirection.IN, amount, paymentDate: at } });
-  await db.rentalDetail.update({ where: { orderId }, data: { idCardReceivedAt: at } });
-  await db.order.update({ where: { id: orderId }, data: { status: OrderStatus.RENTING } });
-}
-
-export async function returnRental(db: Db, orderId: string, returnBranchId: string, at: Date) {
-  const order = await db.order.findUniqueOrThrow({ where: { id: orderId }, include: { rentalItems: { include: { cameraInstance: true } } } });
-  await db.rentalDetail.update({ where: { orderId }, data: { returnedAt: at, returnBranchId } });
-  for (const item of order.rentalItems) if (item.cameraInstance.branchId !== returnBranchId) {
-    await db.cameraMovement.create({ data: { cameraInstanceId: item.cameraInstanceId, fromBranchId: item.cameraInstance.branchId, toBranchId: returnBranchId, orderId, movedAt: at } });
-    await db.cameraInstance.update({ where: { id: item.cameraInstanceId }, data: { branchId: returnBranchId } });
+  if (count === 0) {
+    // Không cập nhật được: báo rõ đơn không tồn tại hay đang sai trạng thái.
+    await assertOrderStatus(db, orderId, allowedFrom);
+    throw new BusinessRuleError(
+      "Đơn vừa được cập nhật bởi một thao tác khác. Hãy tải lại trang."
+    );
   }
-  await db.order.update({ where: { id: orderId }, data: { status: OrderStatus.RETURNED } });
 }
 
-export async function resolveDeposit(db: Db, orderId: string, depositId: string, refunded: Prisma.Decimal, forfeited: Prisma.Decimal, note: string | null, at: Date) {
-  const deposit = await db.deposit.findFirst({ where: { id: depositId, orderId } });
-  if (!deposit) throw new RentalRuleError("Không tìm thấy khoản cọc của đơn.");
-  if (refunded.add(forfeited).gt(deposit.amountReceived)) throw new RentalRuleError("Tổng hoàn và giữ cọc không được vượt số tiền đã nhận.");
-  await db.deposit.update({ where: { id: depositId }, data: { amountRefunded: refunded, amountForfeited: forfeited, resolutionNote: note, resolvedAt: at } });
-  if (refunded.gt(0)) await db.payment.create({ data: { orderId, depositId, paymentType: deposit.kind === "BOOKING" ? "BOOKING_DEPOSIT_REFUNDED" : "SECURITY_DEPOSIT_REFUNDED", direction: "OUT", amount: refunded, paymentDate: at, notes: note } });
+/** Đảm bảo đơn thuê tồn tại và đang ở một trong các trạng thái `allowed`. */
+async function assertOrderStatus(
+  db: Db,
+  orderId: string,
+  allowed: OrderStatus[]
+) {
+  const order = await db.order.findFirst({
+    where: { id: orderId, orderType: OrderType.RENTAL, deletedAt: null },
+    select: { status: true },
+  });
+
+  if (!order) throw new BusinessRuleError("Không tìm thấy đơn thuê.");
+  if (!allowed.includes(order.status)) {
+    throw new BusinessRuleError(
+      `Đơn đang ở trạng thái "${ORDER_STATUS_LABEL[order.status]}" nên không thể thực hiện thao tác này.`
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tạo đơn
+// ---------------------------------------------------------------------------
+
+export type CreateRentalOrderInput = {
+  customerId: string;
+  branchId: string;
+  cameraIds: string[];
+  pickupAt: Date;
+  returnDueAt: Date;
+  notes: string | null;
+};
+
+/** Tạo đơn thuê ở trạng thái chờ cọc giữ chỗ và tính sẵn tiền thuê từng máy. */
+export async function createRentalOrder(
+  input: CreateRentalOrderInput
+): Promise<{ id: string }> {
+  const { customerId, branchId, cameraIds, pickupAt, returnDueAt, notes } =
+    input;
+
+  if (new Set(cameraIds).size !== cameraIds.length) {
+    throw new BusinessRuleError("Một máy chỉ được chọn một lần.");
+  }
+  const rentalDays = calculateRentalDays(pickupAt, returnDueAt);
+
+  return prisma.$transaction(async (db) => {
+    const cameras = await loadRentableCameras(db, cameraIds, {
+      pickupAt,
+      returnDueAt,
+    });
+    const orderCode = await generateRentalOrderCode(db);
+
+    return db.order.create({
+      data: {
+        orderCode,
+        orderType: OrderType.RENTAL,
+        status: OrderStatus.PENDING_BOOKING_DEPOSIT,
+        customerId,
+        branchId,
+        orderDate: new Date(),
+        notes,
+        rentalDetail: { create: { pickupAt, returnDueAt, rentalDays } },
+        rentalItems: {
+          create: cameras.map((camera) => buildRentalItem(camera, rentalDays)),
+        },
+      },
+      select: { id: true },
+    });
+  });
+}
+
+/** Dòng RentalItem: lưu cả giá tại thời điểm tạo đơn để đổi giá sau này không ảnh hưởng đơn cũ. */
+function buildRentalItem(camera: RentableCamera, rentalDays: number) {
+  return {
+    cameraInstanceId: camera.id,
+    unitPrice1day: camera.price1day,
+    unitPriceCombo3: camera.priceCombo3,
+    ...calculateRentalPrice(rentalDays, camera.price1day, camera.priceCombo3),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Các sự kiện trong vòng đời
+// ---------------------------------------------------------------------------
+
+/** Nhận cọc giữ chỗ: PENDING_BOOKING_DEPOSIT → BOOKED. */
+export async function receiveBookingDeposit(input: {
+  orderId: string;
+  amount: Prisma.Decimal;
+  at?: Date;
+}) {
+  const { orderId, amount, at = new Date() } = input;
+
+  await prisma.$transaction(async (db) => {
+    await transitionOrder(
+      db,
+      orderId,
+      [OrderStatus.PENDING_BOOKING_DEPOSIT],
+      OrderStatus.BOOKED
+    );
+    await recordBookingDeposit(db, { orderId, amount, receivedAt: at });
+  });
+}
+
+/** Giao máy (kèm cọc bảo đảm và CCCD): BOOKED → RENTING. */
+export async function startRental(input: {
+  orderId: string;
+  securityDepositKind: SecurityDepositKind;
+  cashAmount: Prisma.Decimal;
+  itemDescription: string | null;
+  at?: Date;
+}) {
+  const { orderId, at = new Date() } = input;
+
+  await prisma.$transaction(async (db) => {
+    await transitionOrder(
+      db,
+      orderId,
+      [OrderStatus.BOOKED],
+      OrderStatus.RENTING
+    );
+    await recordSecurityDeposit(db, {
+      orderId,
+      kind: input.securityDepositKind,
+      cashAmount: input.cashAmount,
+      itemDescription: input.itemDescription,
+      receivedAt: at,
+    });
+    await db.rentalDetail.update({
+      where: { orderId },
+      data: { idCardReceivedAt: at },
+    });
+  });
+}
+
+/**
+ * Nhận máy trả: RENTING → RETURNED.
+ * Máy được trả về cơ sở khác cơ sở hiện tại sẽ tự động ghi CameraMovement
+ * và cập nhật cơ sở của máy.
+ */
+export async function returnRental(input: {
+  orderId: string;
+  returnBranchId: string;
+  at?: Date;
+}) {
+  const { orderId, returnBranchId, at = new Date() } = input;
+
+  await prisma.$transaction(async (db) => {
+    await transitionOrder(
+      db,
+      orderId,
+      [OrderStatus.RENTING],
+      OrderStatus.RETURNED
+    );
+    await db.rentalDetail.update({
+      where: { orderId },
+      data: { returnedAt: at, returnBranchId },
+    });
+    await moveCamerasToBranch(db, orderId, returnBranchId, at);
+  });
+}
+
+async function moveCamerasToBranch(
+  db: Db,
+  orderId: string,
+  toBranchId: string,
+  movedAt: Date
+) {
+  const items = await db.rentalItem.findMany({
+    where: { orderId },
+    select: { cameraInstance: { select: { id: true, branchId: true } } },
+  });
+
+  for (const { cameraInstance } of items) {
+    if (cameraInstance.branchId === toBranchId) continue;
+
+    await db.cameraMovement.create({
+      data: {
+        cameraInstanceId: cameraInstance.id,
+        fromBranchId: cameraInstance.branchId,
+        toBranchId,
+        orderId,
+        movedAt,
+      },
+    });
+    await db.cameraInstance.update({
+      where: { id: cameraInstance.id },
+      data: { branchId: toBranchId },
+    });
+  }
+}
+
+/** Xử lý (hoàn/giữ) một khoản cọc — chỉ làm được sau khi đã trả máy. */
+export async function resolveRentalDeposit(input: {
+  orderId: string;
+  depositId: string;
+  refunded: Prisma.Decimal;
+  forfeited: Prisma.Decimal;
+  note: string | null;
+  at?: Date;
+}) {
+  const { orderId, at = new Date(), ...settlement } = input;
+
+  await prisma.$transaction(async (db) => {
+    await assertOrderStatus(db, orderId, [OrderStatus.RETURNED]);
+    await settleDeposit(db, { orderId, settledAt: at, ...settlement });
+  });
+}
+
+/** Hoàn tất đơn: RETURNED → COMPLETED. */
+export async function completeRental(input: { orderId: string; at?: Date }) {
+  const { orderId, at = new Date() } = input;
+
+  await prisma.$transaction((db) =>
+    transitionOrder(
+      db,
+      orderId,
+      [OrderStatus.RETURNED],
+      OrderStatus.COMPLETED,
+      {
+        completedAt: at,
+      }
+    )
+  );
+}
+
+/** Hủy đơn và nhả lịch của các máy (để đơn khác có thể thuê lại). */
+export async function cancelRental(input: { orderId: string; at?: Date }) {
+  const { orderId, at = new Date() } = input;
+
+  await prisma.$transaction(async (db) => {
+    await transitionOrder(
+      db,
+      orderId,
+      CANCELLABLE_STATUSES,
+      OrderStatus.CANCELLED,
+      {
+        cancelledAt: at,
+      }
+    );
+    await db.rentalItem.updateMany({
+      where: { orderId },
+      data: { isBlocking: false },
+    });
+  });
 }

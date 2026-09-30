@@ -1,3 +1,104 @@
-import { prisma } from "@/server/db";
-import { saveMasterData, setMasterDataDeleted } from "@/server/master-data";
-export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ notice?: string; error?: string }> }) { const [customers,params]=await Promise.all([prisma.customer.findMany({orderBy:{name:"asc"}}),searchParams]); return <div className="max-w-6xl space-y-6"><header><h1 className="text-2xl font-semibold">Khách hàng</h1><p className="mt-1 text-sm text-ink/60">Số điện thoại không bắt buộc là duy nhất; cần kiểm tra khách trùng trước khi tạo đơn.</p></header>{params.notice&&<p className="rounded bg-green-50 p-3 text-sm text-green-800">{params.notice}</p>}{params.error&&<p className="rounded bg-red-50 p-3 text-sm text-red-700">{params.error}</p>}<form action={saveMasterData} className="grid gap-3 rounded-lg border border-line bg-white p-5 shadow-sm md:grid-cols-2"><input type="hidden" name="entity" value="customer"/><label className="text-sm">Tên khách hàng<input required name="name" className="mt-1 w-full rounded border border-line p-2"/></label><label className="text-sm">Số điện thoại<input name="phone" className="mt-1 w-full rounded border border-line p-2"/></label><label className="text-sm">Kênh liên hệ<input name="contactChannel" placeholder="Facebook, Zalo…" className="mt-1 w-full rounded border border-line p-2"/></label><label className="text-sm">Tài khoản liên hệ<input name="contactHandle" className="mt-1 w-full rounded border border-line p-2"/></label><label className="text-sm">Ghi chú<input name="notes" className="mt-1 w-full rounded border border-line p-2"/></label><label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" name="isFlagged"/>Khách cần lưu ý</label><button className="rounded bg-accent px-4 py-2 text-sm font-medium text-paper md:col-span-2">Thêm khách hàng</button></form><div className="overflow-x-auto rounded-lg border border-line bg-white"><table className="w-full text-left text-sm"><thead className="border-b border-line bg-ink/5"><tr><th className="p-3">Khách hàng</th><th className="p-3">Liên hệ</th><th className="p-3">Ghi chú</th><th className="p-3"/></tr></thead><tbody>{customers.filter(x=>!x.deletedAt).map(x=><tr key={x.id} className="border-b border-line"><td className="p-3 font-medium">{x.name}{x.isFlagged&&<span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Lưu ý</span>}</td><td className="p-3">{x.phone??"—"}<br/><span className="text-ink/55">{[x.contactChannel,x.contactHandle].filter(Boolean).join(": ")}</span></td><td className="p-3">{x.notes??"—"}</td><td className="p-3"><form action={setMasterDataDeleted}><input type="hidden" name="entity" value="customer"/><input type="hidden" name="id" value={x.id}/><button className="text-red-700">Xóa</button></form></td></tr>)}{customers.filter(x=>!x.deletedAt).length===0&&<tr><td colSpan={4} className="p-5 text-ink/50">Chưa có khách hàng.</td></tr>}</tbody></table></div></div>; }
+import {
+  FlashMessages,
+  type FlashSearchParams,
+} from "@/components/flash-messages";
+import {
+  CheckboxField,
+  Field,
+  SoftDeleteForm,
+  SubmitButton,
+  TABLE_WRAPPER_CLASS,
+} from "@/components/form-fields";
+import { saveMasterData } from "@/server/master-data";
+import { listCustomers } from "@/server/queries/master-data.queries";
+
+export default async function CustomersPage({
+  searchParams,
+}: {
+  searchParams: Promise<FlashSearchParams>;
+}) {
+  const [customers, flash] = await Promise.all([listCustomers(), searchParams]);
+
+  return (
+    <div className="max-w-6xl space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold">Khách hàng</h1>
+        <p className="mt-1 text-sm text-ink/60">
+          Số điện thoại không bắt buộc là duy nhất; cần kiểm tra khách trùng
+          trước khi tạo đơn.
+        </p>
+      </header>
+
+      <FlashMessages {...flash} />
+
+      <form
+        action={saveMasterData}
+        className="grid gap-3 rounded-lg border border-line bg-white p-5 shadow-sm md:grid-cols-2"
+      >
+        <input type="hidden" name="entity" value="customer" />
+
+        <Field name="name" label="Tên khách hàng" required />
+        <Field name="phone" label="Số điện thoại" />
+        <Field
+          name="contactChannel"
+          label="Kênh liên hệ"
+          placeholder="Facebook, Zalo…"
+        />
+        <Field name="contactHandle" label="Tài khoản liên hệ" />
+        <Field name="notes" label="Ghi chú" />
+        <div className="flex items-end pb-2">
+          <CheckboxField name="isFlagged" label="Khách cần lưu ý" />
+        </div>
+
+        <SubmitButton className="md:col-span-2">Thêm khách hàng</SubmitButton>
+      </form>
+
+      <div className={TABLE_WRAPPER_CLASS}>
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-line bg-ink/5">
+            <tr>
+              <th className="p-3">Khách hàng</th>
+              <th className="p-3">Liên hệ</th>
+              <th className="p-3">Ghi chú</th>
+              <th className="p-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {customers.map((customer) => (
+              <tr key={customer.id} className="border-b border-line">
+                <td className="p-3 font-medium">
+                  {customer.name}
+                  {customer.isFlagged && (
+                    <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">
+                      Lưu ý
+                    </span>
+                  )}
+                </td>
+                <td className="p-3">
+                  {customer.phone ?? "—"}
+                  <br />
+                  <span className="text-ink/55">
+                    {[customer.contactChannel, customer.contactHandle]
+                      .filter(Boolean)
+                      .join(": ")}
+                  </span>
+                </td>
+                <td className="p-3">{customer.notes ?? "—"}</td>
+                <td className="p-3">
+                  <SoftDeleteForm entity="customer" id={customer.id} />
+                </td>
+              </tr>
+            ))}
+            {customers.length === 0 && (
+              <tr>
+                <td colSpan={4} className="p-5 text-ink/50">
+                  Chưa có khách hàng.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
