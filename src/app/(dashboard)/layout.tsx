@@ -3,7 +3,7 @@ import { requireSession, logout } from "@/server/auth";
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/" },
-  { label: "Đơn hàng", href: "#", ready: false },
+  { label: "Đơn hàng", href: "/orders" },
   { label: "Máy ảnh", href: "/cameras" },
   { label: "Phim", href: "#", ready: false },
   { label: "Khách hàng", href: "/customers" },
