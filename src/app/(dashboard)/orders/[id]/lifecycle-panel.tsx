@@ -63,6 +63,7 @@ function BookingDepositForm({ orderId }: { orderId: string }) {
           name="amount"
           type="number"
           min="0"
+          defaultValue={40000}
           className={`${INLINE_INPUT_CLASS} w-36`}
         />
       </InlineField>
