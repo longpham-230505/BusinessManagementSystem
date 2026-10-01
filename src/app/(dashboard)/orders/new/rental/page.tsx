@@ -4,11 +4,9 @@ import {
   FlashMessages,
   type FlashSearchParams,
 } from "@/components/flash-messages";
-import { CAMERA_STATUS_LABEL } from "@/lib/labels";
 import { createRentalOrderAction } from "@/server/rental-actions";
 import { loadNewRentalOrderOptions } from "@/server/queries/rental-orders.queries";
-
-type Options = Awaited<ReturnType<typeof loadNewRentalOrderOptions>>;
+import { CameraPicker } from "../../_components/camera-picker";
 
 export default async function NewRentalOrderPage({
   searchParams,
@@ -83,38 +81,5 @@ export default async function NewRentalOrderPage({
         <SubmitButton>Tạo đơn và tính giá</SubmitButton>
       </form>
     </div>
-  );
-}
-
-function CameraPicker({ cameras }: { cameras: Options["cameras"] }) {
-  return (
-    <fieldset>
-      <legend className="mb-2 text-sm font-medium">
-        Máy thuê <span className="text-red-700">*</span>
-      </legend>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {cameras.map((camera) => (
-          <label
-            key={camera.id}
-            className="flex items-center gap-3 rounded border border-line p-3 text-sm"
-          >
-            <input
-              type="checkbox"
-              name="cameraIds"
-              value={camera.id}
-              disabled={camera.status === "RETIRED"}
-            />
-            <span>
-              <b>{camera.assetCode}</b> · {camera.cameraModel.name}
-              <br />
-              <span className="text-ink/55">
-                Đang ở {camera.branch.name} ·{" "}
-                {CAMERA_STATUS_LABEL[camera.status]}
-              </span>
-            </span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
   );
 }

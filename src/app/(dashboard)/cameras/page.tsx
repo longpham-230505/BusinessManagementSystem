@@ -3,11 +3,9 @@ import {
   FlashMessages,
   type FlashSearchParams,
 } from "@/components/flash-messages";
+import { CameraInstanceFields } from "@/components/camera-instance-fields";
 import {
-  CheckboxField,
-  Field,
-  SelectField,
-  SoftDeleteForm,
+  RowActions,
   SubmitButton,
   TABLE_WRAPPER_CLASS,
 } from "@/components/form-fields";
@@ -37,7 +35,7 @@ export default async function CamerasPage({
       <header>
         <h1 className="text-2xl font-semibold">Máy ảnh</h1>
         <p className="mt-1 text-sm text-ink/60">
-          Tạo tài sản vật lý; giá thuê được lưu riêng cho từng máy.
+          Tạo và chỉnh sửa tài sản vật lý; giá thuê và số phim còn lại được lưu riêng cho từng máy.
         </p>
       </header>
 
@@ -49,58 +47,7 @@ export default async function CamerasPage({
       >
         <input type="hidden" name="entity" value="cameraInstance" />
 
-        <SelectField name="cameraModelId" label="Model" required>
-          <option value="">Chọn model</option>
-          {models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.name}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField name="branchId" label="Cơ sở" required>
-          <option value="">Chọn cơ sở</option>
-          {branches.map((branch) => (
-            <option key={branch.id} value={branch.id}>
-              {branch.name}
-            </option>
-          ))}
-        </SelectField>
-        <Field name="assetCode" label="Mã máy" required />
-
-        <Field
-          name="price1day"
-          label="Giá thuê 1 ngày"
-          type="number"
-          required
-        />
-        <Field
-          name="priceCombo3"
-          label="Giá combo 3 ngày"
-          type="number"
-          required
-        />
-        <Field
-          name="filmRemaining"
-          label="Phim còn trong máy"
-          type="number"
-          defaultValue={0}
-          required
-        />
-
-        <SelectField name="status" label="Trạng thái">
-          {Object.entries(CAMERA_STATUS_LABEL).map(([status, label]) => (
-            <option key={status} value={status}>
-              {label}
-            </option>
-          ))}
-        </SelectField>
-        <Field name="purchaseCost" label="Giá mua" type="number" />
-        <Field name="purchaseDate" label="Ngày mua" type="date" />
-
-        <Field name="notes" label="Ghi chú" className="md:col-span-2" />
-        <div className="flex items-end pb-2">
-          <CheckboxField name="active" label="Đang sử dụng" defaultChecked />
-        </div>
+        <CameraInstanceFields models={models} branches={branches} />
 
         <SubmitButton className="md:col-span-3">Thêm máy</SubmitButton>
       </form>
@@ -112,6 +59,7 @@ export default async function CamerasPage({
               <th className="p-3">Mã máy</th>
               <th className="p-3">Model / Cơ sở</th>
               <th className="p-3">Giá thuê</th>
+              <th className="p-3">Phim còn lại</th>
               <th className="p-3">Trạng thái</th>
               <th className="p-3" />
             </tr>
@@ -130,15 +78,20 @@ export default async function CamerasPage({
                   <br />
                   {formatVnd(camera.priceCombo3)} / 3 ngày
                 </td>
+                <td className="p-3 font-medium">{camera.filmRemaining}</td>
                 <td className="p-3">{CAMERA_STATUS_LABEL[camera.status]}</td>
                 <td className="p-3">
-                  <SoftDeleteForm entity="cameraInstance" id={camera.id} />
+                  <RowActions
+                    editHref={`/cameras/${camera.id}/edit`}
+                    entity="cameraInstance"
+                    id={camera.id}
+                  />
                 </td>
               </tr>
             ))}
             {cameras.length === 0 && (
               <tr>
-                <td colSpan={5} className="p-5 text-ink/50">
+                <td colSpan={6} className="p-5 text-ink/50">
                   Chưa có máy. Hãy{" "}
                   <Link href="/settings" className="text-accent underline">
                     tạo model và cơ sở

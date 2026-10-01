@@ -23,6 +23,16 @@ export async function loadRentableCameras(
   cameraIds: string[],
   period: RentalPeriod
 ): Promise<RentableCamera[]> {
+  const cameras = await loadCamerasForRental(db, cameraIds);
+  await assertNoRentalConflicts(db, cameraIds, period);
+  return cameras;
+}
+
+/** Các máy phải tồn tại và còn sử dụng được; trả về kèm giá thuê hiện tại của từng máy. */
+export async function loadCamerasForRental(
+  db: Db,
+  cameraIds: string[]
+): Promise<RentableCamera[]> {
   const cameras = await db.cameraInstance.findMany({
     where: { id: { in: cameraIds }, deletedAt: null },
     select: {
@@ -48,18 +58,30 @@ export async function loadRentableCameras(
     );
   }
 
+  return cameras;
+}
+
+/**
+ * Báo lỗi nếu máy nào đang có đơn thuê (còn hiệu lực) chồng lấn với `period`.
+ * Khi sửa đơn, truyền `excludeOrderId` để đơn đang sửa không tự xung đột với chính nó.
+ */
+export async function assertNoRentalConflicts(
+  db: Db,
+  cameraIds: string[],
+  period: RentalPeriod,
+  excludeOrderId?: string
+) {
   const conflictingCodes = await findConflictingAssetCodes(
     db,
     cameraIds,
-    period
+    period,
+    excludeOrderId
   );
   if (conflictingCodes.length > 0) {
     throw new BusinessRuleError(
       `Máy ${conflictingCodes.join(", ")} đã có lịch thuê trùng thời gian.`
     );
   }
-
-  return cameras;
 }
 
 /**
@@ -69,13 +91,15 @@ export async function loadRentableCameras(
 async function findConflictingAssetCodes(
   db: Db,
   cameraIds: string[],
-  { pickupAt, returnDueAt }: RentalPeriod
+  { pickupAt, returnDueAt }: RentalPeriod,
+  excludeOrderId?: string
 ): Promise<string[]> {
   const overlappingItems = await db.rentalItem.findMany({
     where: {
       cameraInstanceId: { in: cameraIds },
       isBlocking: true,
       order: {
+        ...(excludeOrderId ? { id: { not: excludeOrderId } } : {}),
         rentalDetail: {
           pickupAt: { lt: returnDueAt },
           OR: [
@@ -88,5 +112,5 @@ async function findConflictingAssetCodes(
     select: { cameraInstance: { select: { assetCode: true } } },
   });
 
-  return overlappingItems.map((item) => item.cameraInstance.assetCode);
+  return [...new Set(overlappingItems.map((item) => item.cameraInstance.assetCode))];
 }

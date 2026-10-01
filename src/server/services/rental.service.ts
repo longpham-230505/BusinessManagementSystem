@@ -10,9 +10,16 @@ import {
 } from "@/server/services/deposit.service";
 import { generateOrderCode } from "@/server/services/order-code";
 import {
+  assertNoRentalConflicts,
+  loadCamerasForRental,
   loadRentableCameras,
   type RentableCamera,
 } from "@/server/services/rental-availability";
+import {
+  diffCameraIds,
+  EDITABLE_RENTAL_STATUSES,
+  getRentalEditPermissions,
+} from "@/server/services/rental-edit-rules";
 import {
   calculateRentalDays,
   calculateRentalPrice,
@@ -150,6 +157,128 @@ function buildRentalItem(camera: RentableCamera, rentalDays: number) {
     unitPriceCombo3: camera.priceCombo3,
     ...calculateRentalPrice(rentalDays, camera.price1day, camera.priceCombo3),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Sửa đơn
+// ---------------------------------------------------------------------------
+
+export type UpdateRentalOrderInput = CreateRentalOrderInput;
+
+/**
+ * Sửa đơn thuê (khách, cơ sở, ghi chú, lịch thuê, danh sách máy).
+ *
+ * Phần nào sửa được tùy trạng thái đơn (xem `rental-edit-rules.ts`). Khi đổi lịch hoặc
+ * máy, hệ thống kiểm tra lại double booking (không tính chính đơn này) và tính lại tiền
+ * thuê: máy giữ nguyên dùng lại giá đã lưu lúc tạo đơn, máy mới lấy giá hiện tại.
+ */
+export async function updateRentalOrder(
+  orderId: string,
+  input: UpdateRentalOrderInput
+) {
+  const { customerId, branchId, notes, cameraIds, pickupAt, returnDueAt } = input;
+
+  if (cameraIds.length === 0) {
+    throw new BusinessRuleError("Hãy chọn ít nhất một máy.");
+  }
+  if (new Set(cameraIds).size !== cameraIds.length) {
+    throw new BusinessRuleError("Một máy chỉ được chọn một lần.");
+  }
+  const rentalDays = calculateRentalDays(pickupAt, returnDueAt);
+
+  await prisma.$transaction(async (db) => {
+    // Cập nhật phần đầu trước: câu UPDATE này khóa dòng đơn đến hết transaction,
+    // nên hai người cùng sửa một đơn sẽ lần lượt chứ không đè nhau.
+    const { count } = await db.order.updateMany({
+      where: {
+        id: orderId,
+        orderType: OrderType.RENTAL,
+        deletedAt: null,
+        status: { in: EDITABLE_RENTAL_STATUSES },
+      },
+      data: { customerId, branchId, notes },
+    });
+    if (count === 0) {
+      throw new BusinessRuleError(
+        "Không tìm thấy đơn thuê, hoặc đơn đã hủy nên không thể sửa."
+      );
+    }
+
+    const order = await db.order.findUniqueOrThrow({
+      where: { id: orderId },
+      select: {
+        status: true,
+        rentalDetail: { select: { pickupAt: true, returnDueAt: true } },
+        rentalItems: {
+          select: {
+            id: true,
+            cameraInstanceId: true,
+            unitPrice1day: true,
+            unitPriceCombo3: true,
+          },
+        },
+      },
+    });
+    const detail = order.rentalDetail;
+    const permissions = getRentalEditPermissions(order.status);
+    if (!detail || !permissions) {
+      throw new BusinessRuleError("Đơn thuê này không thể sửa.");
+    }
+
+    const cameraChanges = diffCameraIds(
+      order.rentalItems.map((item) => item.cameraInstanceId),
+      cameraIds
+    );
+    const camerasChanged =
+      cameraChanges.added.length > 0 || cameraChanges.removed.length > 0;
+    const pickupChanged = pickupAt.getTime() !== detail.pickupAt.getTime();
+    const returnDueChanged = returnDueAt.getTime() !== detail.returnDueAt.getTime();
+
+    if (camerasChanged && !permissions.canChangeCameras) {
+      throw new BusinessRuleError("Đơn đã giao máy nên không thể đổi máy.");
+    }
+    if (pickupChanged && !permissions.canChangePickup) {
+      throw new BusinessRuleError(
+        "Đơn đã giao máy nên không thể đổi thời điểm nhận máy."
+      );
+    }
+    if (returnDueChanged && !permissions.canChangeReturnDue) {
+      throw new BusinessRuleError("Đơn đã trả máy nên không thể đổi hạn trả.");
+    }
+
+    if (!camerasChanged && !pickupChanged && !returnDueChanged) return;
+
+    // Kiểm tra máy mới và lịch (không tính chính đơn này) trước khi ghi bất cứ thay đổi nào.
+    const addedCameras = await loadCamerasForRental(db, cameraChanges.added);
+    await assertNoRentalConflicts(db, cameraIds, { pickupAt, returnDueAt }, orderId);
+
+    if (pickupChanged || returnDueChanged) {
+      await db.rentalDetail.update({
+        where: { orderId },
+        data: { pickupAt, returnDueAt, rentalDays },
+      });
+    }
+
+    await db.rentalItem.deleteMany({
+      where: { orderId, cameraInstanceId: { in: cameraChanges.removed } },
+    });
+
+    // Máy giữ nguyên: tính lại tiền theo số ngày mới nhưng dùng giá đã lưu lúc tạo đơn.
+    for (const item of order.rentalItems) {
+      if (!cameraChanges.kept.includes(item.cameraInstanceId)) continue;
+      await db.rentalItem.update({
+        where: { id: item.id },
+        data: calculateRentalPrice(rentalDays, item.unitPrice1day, item.unitPriceCombo3),
+      });
+    }
+
+    await db.rentalItem.createMany({
+      data: addedCameras.map((camera) => ({
+        orderId,
+        ...buildRentalItem(camera, rentalDays),
+      })),
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -50,12 +50,22 @@ export async function RentalOrderView({
         ← Đơn hàng
       </Link>
 
-      <header>
-        <h1 className="text-2xl font-semibold">{order.orderCode}</h1>
-        <p className="text-sm text-ink/60">
-          {order.customer.name} · {order.branch.name} ·{" "}
-          <b>{ORDER_STATUS_LABEL[order.status]}</b>
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">{order.orderCode}</h1>
+          <p className="text-sm text-ink/60">
+            {order.customer.name} · {order.branch.name} ·{" "}
+            <b>{ORDER_STATUS_LABEL[order.status]}</b>
+          </p>
+        </div>
+        {order.status !== "CANCELLED" && (
+          <Link
+            href={`/orders/${order.id}/edit`}
+            className="rounded border border-line px-3 py-2 text-sm text-accent hover:bg-accent/10"
+          >
+            Sửa đơn
+          </Link>
+        )}
       </header>
 
       <FlashMessages notice={flash.notice} error={flash.error} />

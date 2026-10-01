@@ -16,6 +16,7 @@ import {
   resolveRentalDeposit,
   returnRental,
   startRental,
+  updateRentalOrder,
   type CreateRentalOrderInput,
 } from "@/server/services/rental.service";
 
@@ -61,6 +62,18 @@ export async function createRentalOrderAction(formData: FormData) {
     "Đã tạo đơn thuê. Hãy nhận cọc giữ chỗ để xác nhận đặt máy.",
     [ORDERS_PATH]
   );
+}
+
+export async function updateRentalOrderAction(formData: FormData) {
+  const form = new FormReader(formData);
+  const orderId = String(formData.get("orderId") ?? "");
+
+  const result = await attempt(() =>
+    updateRentalOrder(orderId, readCreateRentalOrderForm(form))
+  );
+  if (!result.ok) redirectWithError(`/orders/${orderId}/edit`, result.message);
+
+  redirectWithNotice(orderDetailPath(orderId), "Đã cập nhật đơn thuê.", [ORDERS_PATH]);
 }
 
 // ---------------------------------------------------------------------------

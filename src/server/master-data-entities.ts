@@ -1,6 +1,10 @@
 import { CameraInstanceStatus, TransactionType } from "@prisma/client";
 import type { FormReader } from "@/lib/form-reader";
 import { prisma } from "@/server/db";
+import {
+  updateCameraInstance,
+  type CameraInstanceData,
+} from "@/server/services/camera.service";
 
 /**
  * Danh sách các loại dữ liệu nền (master data) và cách lưu / xóa mềm từng loại.
@@ -11,6 +15,8 @@ import { prisma } from "@/server/db";
 export type MasterDataEntity = {
   /** Trang hiển thị lại sau khi lưu hoặc xóa. */
   redirectTo: string;
+  /** Trang sửa một bản ghi — quay lại đây khi lưu bị lỗi để không mất ngữ cảnh. */
+  editPath(id: string): string;
   /** Tạo mới (id = null) hoặc cập nhật bản ghi từ dữ liệu form. */
   save(id: string | null, form: FormReader): Promise<unknown>;
   /** Xóa mềm hoặc khôi phục (restore = true) một bản ghi. */
@@ -18,12 +24,15 @@ export type MasterDataEntity = {
 };
 
 const SETTINGS_PATH = "/settings";
+const settingsEditPath = (entity: string) => (id: string) =>
+  `${SETTINGS_PATH}/${entity}/${id}/edit`;
 
 /** Giá trị cột `deleted_at`: null khi khôi phục, thời điểm hiện tại khi xóa mềm. */
 const deletedAtValue = (restore: boolean) => (restore ? null : new Date());
 
 const branch: MasterDataEntity = {
   redirectTo: SETTINGS_PATH,
+  editPath: settingsEditPath("branch"),
   save(id, form) {
     const data = {
       name: form.requiredText("name", "Tên cơ sở"),
@@ -43,6 +52,7 @@ const branch: MasterDataEntity = {
 
 const cameraModel: MasterDataEntity = {
   redirectTo: SETTINGS_PATH,
+  editPath: settingsEditPath("cameraModel"),
   save(id, form) {
     const data = {
       name: form.requiredText("name", "Tên model"),
@@ -66,28 +76,30 @@ const cameraModel: MasterDataEntity = {
     }),
 };
 
+function readCameraInstanceData(form: FormReader): CameraInstanceData {
+  return {
+    cameraModelId: form.requiredText("cameraModelId", "Model máy"),
+    branchId: form.requiredText("branchId", "Cơ sở"),
+    assetCode: form.requiredText("assetCode", "Mã máy"),
+    price1day: form.requiredVnd("price1day", "Giá thuê 1 ngày"),
+    priceCombo3: form.requiredVnd("priceCombo3", "Giá combo 3 ngày"),
+    filmRemaining: form.nonNegativeInt("filmRemaining", "Số phim còn lại"),
+    status: form.oneOf("status", "Trạng thái", Object.values(CameraInstanceStatus)),
+    purchaseCost: form.vnd("purchaseCost", "Giá mua"),
+    purchaseDate: form.date("purchaseDate", "Ngày mua"),
+    notes: form.text("notes"),
+    active: form.checkbox("active"),
+  };
+}
+
 const cameraInstance: MasterDataEntity = {
   redirectTo: "/cameras",
+  editPath: (id) => `/cameras/${id}/edit`,
   save(id, form) {
-    const data = {
-      cameraModelId: form.requiredText("cameraModelId", "Model máy"),
-      branchId: form.requiredText("branchId", "Cơ sở"),
-      assetCode: form.requiredText("assetCode", "Mã máy"),
-      price1day: form.requiredVnd("price1day", "Giá thuê 1 ngày"),
-      priceCombo3: form.requiredVnd("priceCombo3", "Giá combo 3 ngày"),
-      filmRemaining: form.nonNegativeInt("filmRemaining", "Số phim còn lại"),
-      status: form.oneOf(
-        "status",
-        "Trạng thái",
-        Object.values(CameraInstanceStatus)
-      ),
-      purchaseCost: form.vnd("purchaseCost", "Giá mua"),
-      purchaseDate: form.date("purchaseDate", "Ngày mua"),
-      notes: form.text("notes"),
-      active: form.checkbox("active"),
-    };
+    const data = readCameraInstanceData(form);
+    // Sửa máy đi qua service để ghi lịch sử chuyển cơ sở và kiểm tra đơn thuê đang mở.
     return id
-      ? prisma.cameraInstance.update({ where: { id }, data })
+      ? updateCameraInstance(id, data)
       : prisma.cameraInstance.create({ data });
   },
   setDeleted: (id, restore) =>
@@ -99,6 +111,7 @@ const cameraInstance: MasterDataEntity = {
 
 const filmType: MasterDataEntity = {
   redirectTo: SETTINGS_PATH,
+  editPath: settingsEditPath("filmType"),
   save(id, form) {
     const data = {
       name: form.requiredText("name", "Tên loại phim"),
@@ -121,6 +134,7 @@ const filmType: MasterDataEntity = {
 
 const printService: MasterDataEntity = {
   redirectTo: SETTINGS_PATH,
+  editPath: settingsEditPath("printService"),
   save(id, form) {
     const data = {
       name: form.requiredText("name", "Tên dịch vụ"),
@@ -140,6 +154,7 @@ const printService: MasterDataEntity = {
 
 const transactionCategory: MasterDataEntity = {
   redirectTo: SETTINGS_PATH,
+  editPath: settingsEditPath("transactionCategory"),
   save(id, form) {
     const data = {
       name: form.requiredText("name", "Tên danh mục"),
@@ -164,6 +179,7 @@ const transactionCategory: MasterDataEntity = {
 
 const customer: MasterDataEntity = {
   redirectTo: "/customers",
+  editPath: (id) => `/customers/${id}/edit`,
   save(id, form) {
     const data = {
       name: form.requiredText("name", "Tên khách hàng"),

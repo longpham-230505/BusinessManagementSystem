@@ -1,14 +1,9 @@
 import { OrderType } from "@prisma/client";
 import Link from "next/link";
 import { TABLE_WRAPPER_CLASS } from "@/components/form-fields";
-import { formatVnDateTime } from "@/lib/datetime";
+import { formatVnDate } from "@/lib/datetime";
 import { ORDER_STATUS_LABEL, ORDER_TYPE_LABEL } from "@/lib/labels";
-import { formatVnd } from "@/lib/money";
 import { listOrders, type OrderListItem } from "@/server/queries/orders.queries";
-import {
-  calculateOrderTotals,
-  sumLineTotals,
-} from "@/server/services/order-totals";
 
 const ORDER_TYPES = Object.values(OrderType);
 
@@ -124,64 +119,23 @@ function OrderSummary({ order }: { order: OrderListItem }) {
           {order.rentalDetail && (
             <>
               <br />
-              <span className="text-ink/55">
-                {order.rentalDetail.rentalDays} ngày · nhận{" "}
-                {formatVnDateTime(order.rentalDetail.pickupAt)}
+              <span className="text-base font-semibold text-ink">
+                {formatVnDate(order.rentalDetail.pickupAt)}
               </span>
+              <span className="text-ink/55"> · {order.rentalDetail.rentalDays} ngày</span>
             </>
           )}
         </>
       );
 
     case "FILM_SALE":
-      return (
-        <SalesSummary
-          order={order}
-          names={order.filmSaleItems.map((item) => `${item.quantity} × ${item.filmType.name}`)}
-          lines={order.filmSaleItems.map((item) => ({
-            quantity: item.quantity,
-            unitPrice: item.salePrice,
-          }))}
-        />
-      );
+      return order.filmSaleItems
+        .map((item) => `${item.quantity} × ${item.filmType.name}`)
+        .join(", ");
 
     case "PHOTO_PRINT":
-      return (
-        <SalesSummary
-          order={order}
-          names={order.photoPrintItems.map(
-            (item) => `${item.quantity} × ${item.printService.name}`
-          )}
-          lines={order.photoPrintItems.map((item) => ({
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-          }))}
-        />
-      );
+      return order.photoPrintItems
+        .map((item) => `${item.quantity} × ${item.printService.name}`)
+        .join(", ");
   }
-}
-
-function SalesSummary({
-  order,
-  names,
-  lines,
-}: {
-  order: OrderListItem;
-  names: string[];
-  lines: Parameters<typeof sumLineTotals>[0];
-}) {
-  const { orderRevenue } = calculateOrderTotals({
-    subtotal: sumLineTotals(lines),
-    discountAmount: order.discountAmount,
-    surchargeAmount: order.surchargeAmount,
-    shippingFee: order.shippingFee,
-  });
-
-  return (
-    <>
-      {names.join(", ")}
-      <br />
-      <span className="text-ink/55">Doanh thu đơn {formatVnd(orderRevenue)}</span>
-    </>
-  );
 }

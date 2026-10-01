@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { setMasterDataDeleted } from "@/server/master-data";
 
@@ -111,6 +112,26 @@ export function SoftDeleteForm({ entity, id }: { entity: string; id: string }) {
       <input type="hidden" name="id" value={id} />
       <button className="text-red-700">Xóa</button>
     </form>
+  );
+}
+
+/** Nhóm thao tác ở cuối mỗi dòng danh sách: Sửa + Xóa (xóa mềm). */
+export function RowActions({
+  editHref,
+  entity,
+  id,
+}: {
+  editHref: string;
+  entity: string;
+  id: string;
+}) {
+  return (
+    <div className="flex items-center gap-4">
+      <Link href={editHref} className="text-accent underline">
+        Sửa
+      </Link>
+      <SoftDeleteForm entity={entity} id={id} />
+    </div>
   );
 }
 

@@ -24,7 +24,10 @@ export async function saveMasterData(formData: FormData) {
 
   const id = form.text("id");
   const result = await attempt(() => entity.save(id, form));
-  if (!result.ok) redirectWithError(entity.redirectTo, result.message);
+  if (!result.ok) {
+    // Đang sửa thì quay lại trang sửa, để người dùng thấy lỗi ngay cạnh dữ liệu đang nhập.
+    redirectWithError(id ? entity.editPath(id) : entity.redirectTo, result.message);
+  }
 
   redirectWithNotice(
     entity.redirectTo,

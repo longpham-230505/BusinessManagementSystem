@@ -51,3 +51,13 @@ export function vnDateInputValue(now: Date = new Date()): string {
 export function formatDateOnly(date: Date): string {
   return date.toLocaleDateString("vi-VN", { timeZone: "UTC" });
 }
+
+/** Ngày (không kèm giờ) theo giờ Việt Nam, dạng `7/10/2026`. */
+export function formatVnDate(date: Date): string {
+  return date.toLocaleDateString("vi-VN", { timeZone: VN_TIME_ZONE });
+}
+
+/** Chuyển một thời điểm thành giá trị cho `<input type="datetime-local">` theo giờ Việt Nam. */
+export function toVnDateTimeLocal(date: Date): string {
+  return new Date(date.getTime() + VN_UTC_OFFSET_MS).toISOString().slice(0, 16);
+}

@@ -2,10 +2,9 @@ import {
   FlashMessages,
   type FlashSearchParams,
 } from "@/components/flash-messages";
+import { CustomerFields } from "@/components/customer-fields";
 import {
-  CheckboxField,
-  Field,
-  SoftDeleteForm,
+  RowActions,
   SubmitButton,
   TABLE_WRAPPER_CLASS,
 } from "@/components/form-fields";
@@ -37,18 +36,7 @@ export default async function CustomersPage({
       >
         <input type="hidden" name="entity" value="customer" />
 
-        <Field name="name" label="Tên khách hàng" required />
-        <Field name="phone" label="Số điện thoại" />
-        <Field
-          name="contactChannel"
-          label="Kênh liên hệ"
-          placeholder="Facebook, Zalo…"
-        />
-        <Field name="contactHandle" label="Tài khoản liên hệ" />
-        <Field name="notes" label="Ghi chú" />
-        <div className="flex items-end pb-2">
-          <CheckboxField name="isFlagged" label="Khách cần lưu ý" />
-        </div>
+        <CustomerFields />
 
         <SubmitButton className="md:col-span-2">Thêm khách hàng</SubmitButton>
       </form>
@@ -85,7 +73,11 @@ export default async function CustomersPage({
                 </td>
                 <td className="p-3">{customer.notes ?? "—"}</td>
                 <td className="p-3">
-                  <SoftDeleteForm entity="customer" id={customer.id} />
+                  <RowActions
+                    editHref={`/customers/${customer.id}/edit`}
+                    entity="customer"
+                    id={customer.id}
+                  />
                 </td>
               </tr>
             ))}
