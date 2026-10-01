@@ -5,7 +5,7 @@ const NAV_ITEMS = [
   { label: "Dashboard", href: "/" },
   { label: "Đơn hàng", href: "/orders" },
   { label: "Máy ảnh", href: "/cameras" },
-  { label: "Phim", href: "#", ready: false },
+  { label: "Kho phim", href: "/film" },
   { label: "Khách hàng", href: "/customers" },
   { label: "Tài chính", href: "#", ready: false },
   { label: "Cài đặt", href: "/settings" },
