@@ -25,7 +25,7 @@ import {
  */
 
 const ORDERS_PATH = "/orders";
-const NEW_ORDER_PATH = "/orders/new";
+const NEW_ORDER_PATH = "/orders/new/rental";
 const orderDetailPath = (orderId: string) => `/orders/${orderId}`;
 
 // ---------------------------------------------------------------------------

@@ -41,3 +41,13 @@ export function vnDateStamp(now: Date): string {
   const day = String(vnNow.getUTCDate()).padStart(2, "0");
   return `${year}${month}${day}`;
 }
+
+/** Ngày hiện tại theo giờ Việt Nam dạng YYYY-MM-DD (giá trị mặc định cho `<input type="date">`). */
+export function vnDateInputValue(now: Date = new Date()): string {
+  return new Date(now.getTime() + VN_UTC_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** Hiển thị giá trị cột DATE (lưu 00:00 UTC) như ngày dd/mm/yyyy, không bị lệch múi giờ. */
+export function formatDateOnly(date: Date): string {
+  return date.toLocaleDateString("vi-VN", { timeZone: "UTC" });
+}

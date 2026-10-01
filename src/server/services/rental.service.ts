@@ -8,7 +8,7 @@ import {
   settleDeposit,
   type SecurityDepositKind,
 } from "@/server/services/deposit.service";
-import { generateRentalOrderCode } from "@/server/services/order-code";
+import { generateOrderCode } from "@/server/services/order-code";
 import {
   loadRentableCameras,
   type RentableCamera,
@@ -121,7 +121,7 @@ export async function createRentalOrder(
       pickupAt,
       returnDueAt,
     });
-    const orderCode = await generateRentalOrderCode(db);
+    const orderCode = await generateOrderCode(db, OrderType.RENTAL);
 
     return db.order.create({
       data: {

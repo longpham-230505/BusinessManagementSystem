@@ -2,6 +2,7 @@ import type {
   CameraInstanceStatus,
   DepositKind,
   OrderStatus,
+  OrderType,
 } from "@prisma/client";
 
 /** Nhãn tiếng Việt cho các enum — dùng thay vì in thẳng giá trị enum ra giao diện. */
@@ -29,4 +30,10 @@ export const DEPOSIT_KIND_LABEL: Record<DepositKind, string> = {
   SECURITY_CASH: "Cọc tiền mặt",
   SECURITY_ITEM: "Cọc tài sản",
   SECURITY_NONE: "Không cọc",
+};
+
+export const ORDER_TYPE_LABEL: Record<OrderType, string> = {
+  RENTAL: "Thuê máy",
+  FILM_SALE: "Bán phim",
+  PHOTO_PRINT: "In ảnh",
 };

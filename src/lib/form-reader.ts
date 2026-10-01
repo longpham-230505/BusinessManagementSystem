@@ -3,6 +3,7 @@ import { parseDateOnly, parseVnDateTimeLocal } from "@/lib/datetime";
 import { BusinessRuleError } from "@/server/errors";
 
 const NON_NEGATIVE_INTEGER_PATTERN = /^\d+$/;
+const SIGNED_INTEGER_PATTERN = /^-?\d+$/;
 
 /**
  * Đọc và kiểm tra dữ liệu từ FormData.
@@ -10,7 +11,18 @@ const NON_NEGATIVE_INTEGER_PATTERN = /^\d+$/;
  * nên có thể hiển thị thẳng cho người dùng.
  */
 export class FormReader {
-  constructor(private readonly formData: FormData) {}
+  /**
+   * @param labelPrefix tiền tố thêm vào thông báo lỗi, ví dụ "Dòng 2: " khi đọc
+   *                    một dòng của bảng nhập liệu động (xem `rows`).
+   */
+  constructor(
+    private readonly formData: FormData,
+    private readonly labelPrefix = ""
+  ) {}
+
+  private fail(message: string): never {
+    throw new BusinessRuleError(`${this.labelPrefix}${message}`);
+  }
 
   /** Chuỗi đã trim; null nếu trống. */
   text(name: string): string | null {
@@ -20,7 +32,7 @@ export class FormReader {
 
   requiredText(name: string, label: string): string {
     const value = this.text(name);
-    if (value === null) throw new BusinessRuleError(`${label} là bắt buộc.`);
+    if (value === null) this.fail(`${label} là bắt buộc.`);
     return value;
   }
 
@@ -30,6 +42,27 @@ export class FormReader {
       .getAll(name)
       .map((value) => String(value).trim())
       .filter((value) => value !== "");
+  }
+
+  /**
+   * Đọc bảng nhập liệu động: mỗi dòng của bảng gửi một giá trị cho MỖI tên trong
+   * `names` (kể cả khi để trống), nên các danh sách cùng tên khớp nhau theo vị trí.
+   * Trả về một FormReader cho từng dòng; dòng trống hoàn toàn được bỏ qua.
+   * Lỗi của dòng nào sẽ có tiền tố "Dòng N: ".
+   */
+  rows(names: readonly string[]): FormReader[] {
+    const columns = names.map((name) => this.formData.getAll(name).map((value) => String(value)));
+    const rowCount = Math.max(0, ...columns.map((column) => column.length));
+
+    const readers: FormReader[] = [];
+    for (let index = 0; index < rowCount; index++) {
+      const rowData = new FormData();
+      names.forEach((name, column) => rowData.append(name, columns[column][index] ?? ""));
+
+      const isBlank = names.every((name) => String(rowData.get(name)).trim() === "");
+      if (!isBlank) readers.push(new FormReader(rowData, `Dòng ${index + 1}: `));
+    }
+    return readers;
   }
 
   /** Checkbox HTML: chỉ có mặt trong FormData (giá trị "on") khi được tick. */
@@ -42,16 +75,14 @@ export class FormReader {
     const value = this.text(name);
     if (value === null) return null;
     if (!NON_NEGATIVE_INTEGER_PATTERN.test(value)) {
-      throw new BusinessRuleError(
-        `${label} phải là số tiền không âm, không có số lẻ.`
-      );
+      this.fail(`${label} phải là số tiền không âm, không có số lẻ.`);
     }
     return new Prisma.Decimal(value);
   }
 
   requiredVnd(name: string, label: string): Prisma.Decimal {
     const value = this.vnd(name, label);
-    if (value === null) throw new BusinessRuleError(`${label} là bắt buộc.`);
+    if (value === null) this.fail(`${label} là bắt buộc.`);
     return value;
   }
 
@@ -63,28 +94,38 @@ export class FormReader {
   nonNegativeInt(name: string, label: string): number {
     const value = this.requiredText(name, label);
     if (!NON_NEGATIVE_INTEGER_PATTERN.test(value)) {
-      throw new BusinessRuleError(`${label} phải là số nguyên không âm.`);
+      this.fail(`${label} phải là số nguyên không âm.`);
+    }
+    return Number(value);
+  }
+
+  /** Số nguyên lớn hơn 0 (ví dụ số lượng). */
+  positiveInt(name: string, label: string): number {
+    const value = this.nonNegativeInt(name, label);
+    if (value === 0) this.fail(`${label} phải lớn hơn 0.`);
+    return value;
+  }
+
+  /** Số nguyên khác 0, có thể âm (ví dụ điều chỉnh tồn kho: âm = hao hụt). */
+  nonZeroInt(name: string, label: string): number {
+    const value = this.requiredText(name, label);
+    if (!SIGNED_INTEGER_PATTERN.test(value) || Number(value) === 0) {
+      this.fail(`${label} phải là số nguyên khác 0.`);
     }
     return Number(value);
   }
 
   /** Giá trị phải nằm trong danh sách `allowed` (ví dụ các giá trị của một enum). */
-  oneOf<T extends string>(
-    name: string,
-    label: string,
-    allowed: readonly T[]
-  ): T {
+  oneOf<T extends string>(name: string, label: string, allowed: readonly T[]): T {
     const value = this.requiredText(name, label);
-    if (!allowed.includes(value as T)) {
-      throw new BusinessRuleError(`${label} không hợp lệ.`);
-    }
+    if (!allowed.includes(value as T)) this.fail(`${label} không hợp lệ.`);
     return value as T;
   }
 
   /** Ngày giờ từ `<input type="datetime-local">`, hiểu theo giờ Việt Nam. */
   requiredDateTime(name: string, label: string): Date {
     const date = parseVnDateTimeLocal(this.requiredText(name, label));
-    if (!date) throw new BusinessRuleError(`${label} không hợp lệ.`);
+    if (!date) this.fail(`${label} không hợp lệ.`);
     return date;
   }
 
@@ -93,7 +134,13 @@ export class FormReader {
     const value = this.text(name);
     if (value === null) return null;
     const date = parseDateOnly(value);
-    if (!date) throw new BusinessRuleError(`${label} không hợp lệ.`);
+    if (!date) this.fail(`${label} không hợp lệ.`);
+    return date;
+  }
+
+  requiredDate(name: string, label: string): Date {
+    const date = this.date(name, label);
+    if (!date) this.fail(`${label} là bắt buộc.`);
     return date;
   }
 }
