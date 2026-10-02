@@ -6,6 +6,7 @@ import {
 } from "@/components/flash-messages";
 import { createRentalOrderAction } from "@/server/rental-actions";
 import { loadNewRentalOrderOptions } from "@/server/queries/rental-orders.queries";
+import { CustomerSelectField } from "@/components/customer-select-field";
 import { CameraPicker } from "../../_components/camera-picker";
 
 export default async function NewRentalOrderPage({
@@ -34,15 +35,7 @@ export default async function NewRentalOrderPage({
         className="space-y-6 rounded-lg border border-line bg-white p-5 shadow-sm"
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField name="customerId" label="Khách hàng" required>
-            <option value="">Chọn khách</option>
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.id}>
-                {customer.name}
-                {customer.phone ? ` — ${customer.phone}` : ""}
-              </option>
-            ))}
-          </SelectField>
+          <CustomerSelectField customers={customers} />
 
           <SelectField name="branchId" label="Cơ sở giao máy" required>
             <option value="">Chọn cơ sở</option>

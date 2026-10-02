@@ -1,3 +1,4 @@
+import { CustomerSelectField } from "@/components/customer-select-field";
 import { Field, SelectField, SubmitButton } from "@/components/form-fields";
 import { formatVnDateTime, toVnDateTimeLocal } from "@/lib/datetime";
 import type { RentalEditPermissions } from "@/server/services/rental-edit-rules";
@@ -44,14 +45,7 @@ export function RentalOrderEditForm({
       <input type="hidden" name="orderId" value={order.id} />
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <SelectField name="customerId" label="Khách hàng" required defaultValue={order.customerId}>
-          {options.customers.map((customer) => (
-            <option key={customer.id} value={customer.id}>
-              {customer.name}
-              {customer.phone ? ` — ${customer.phone}` : ""}
-            </option>
-          ))}
-        </SelectField>
+        <CustomerSelectField customers={options.customers} defaultValue={order.customerId} />
 
         <SelectField name="branchId" label="Cơ sở giao máy" required defaultValue={order.branchId}>
           {options.branches.map((branch) => (

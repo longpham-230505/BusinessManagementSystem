@@ -1,3 +1,4 @@
+import { CustomerSelectField } from "@/components/customer-select-field";
 import { Field, SelectField } from "@/components/form-fields";
 
 type Option = { id: string; name: string; phone?: string | null };
@@ -23,20 +24,7 @@ export function SalesOrderHeaderFields({
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2">
-        <SelectField
-          name="customerId"
-          label="Khách hàng"
-          required
-          defaultValue={defaults?.customerId}
-        >
-          <option value="">Chọn khách</option>
-          {customers.map((customer) => (
-            <option key={customer.id} value={customer.id}>
-              {customer.name}
-              {customer.phone ? ` — ${customer.phone}` : ""}
-            </option>
-          ))}
-        </SelectField>
+        <CustomerSelectField customers={customers} defaultValue={defaults?.customerId} />
 
         <SelectField
           name="branchId"

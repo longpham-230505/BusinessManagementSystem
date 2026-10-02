@@ -4,14 +4,11 @@ import {
   type FlashSearchParams,
 } from "@/components/flash-messages";
 import { CameraInstanceFields } from "@/components/camera-instance-fields";
-import {
-  RowActions,
-  SubmitButton,
-  TABLE_WRAPPER_CLASS,
-} from "@/components/form-fields";
+import { FormDialog } from "@/components/form-dialog";
+import { RowActions, TABLE_WRAPPER_CLASS } from "@/components/form-fields";
 import { CAMERA_STATUS_LABEL } from "@/lib/labels";
 import { formatVnd } from "@/lib/money";
-import { saveMasterData } from "@/server/master-data";
+import { createCameraFromDialogAction } from "@/server/dialog-actions";
 import {
   listBranches,
   listCameraInstances,
@@ -32,25 +29,27 @@ export default async function CamerasPage({
 
   return (
     <div className="max-w-6xl space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">Máy ảnh</h1>
-        <p className="mt-1 text-sm text-ink/60">
-          Tạo và chỉnh sửa tài sản vật lý; giá thuê và số phim còn lại được lưu riêng cho từng máy.
-        </p>
+      <header className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Máy ảnh</h1>
+          <p className="mt-1 text-sm text-ink/60">
+            Tạo và chỉnh sửa tài sản vật lý; giá thuê và số phim còn lại được lưu riêng cho
+            từng máy.
+          </p>
+        </div>
+        <FormDialog
+          triggerLabel="Thêm máy"
+          title="Thêm máy mới"
+          submitLabel="Thêm máy"
+          action={createCameraFromDialogAction}
+          gridClassName="md:grid-cols-3"
+          widthClass="max-w-4xl"
+        >
+          <CameraInstanceFields models={models} branches={branches} />
+        </FormDialog>
       </header>
 
       <FlashMessages {...flash} />
-
-      <form
-        action={saveMasterData}
-        className="grid gap-3 rounded-lg border border-line bg-white p-5 shadow-sm md:grid-cols-3"
-      >
-        <input type="hidden" name="entity" value="cameraInstance" />
-
-        <CameraInstanceFields models={models} branches={branches} />
-
-        <SubmitButton className="md:col-span-3">Thêm máy</SubmitButton>
-      </form>
 
       <div className={TABLE_WRAPPER_CLASS}>
         <table className="w-full text-left text-sm">

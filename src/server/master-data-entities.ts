@@ -1,6 +1,7 @@
 import { CameraInstanceStatus, TransactionType } from "@prisma/client";
 import type { FormReader } from "@/lib/form-reader";
 import { prisma } from "@/server/db";
+import { createCustomer, type CustomerData } from "@/server/services/customer.service";
 import {
   updateCameraInstance,
   type CameraInstanceData,
@@ -76,7 +77,7 @@ const cameraModel: MasterDataEntity = {
     }),
 };
 
-function readCameraInstanceData(form: FormReader): CameraInstanceData {
+export function readCameraInstanceData(form: FormReader): CameraInstanceData {
   return {
     cameraModelId: form.requiredText("cameraModelId", "Model máy"),
     branchId: form.requiredText("branchId", "Cơ sở"),
@@ -177,21 +178,24 @@ const transactionCategory: MasterDataEntity = {
     }),
 };
 
+/** Đọc dữ liệu khách hàng từ form (dùng cho cả trang Khách hàng lẫn hộp thoại tạo nhanh khi tạo đơn). */
+export function readCustomerData(form: FormReader): CustomerData {
+  return {
+    name: form.requiredText("name", "Tên khách hàng"),
+    phone: form.text("phone"),
+    contactChannel: form.text("contactChannel"),
+    contactHandle: form.text("contactHandle"),
+    isFlagged: form.checkbox("isFlagged"),
+    notes: form.text("notes"),
+  };
+}
+
 const customer: MasterDataEntity = {
   redirectTo: "/customers",
   editPath: (id) => `/customers/${id}/edit`,
   save(id, form) {
-    const data = {
-      name: form.requiredText("name", "Tên khách hàng"),
-      phone: form.text("phone"),
-      contactChannel: form.text("contactChannel"),
-      contactHandle: form.text("contactHandle"),
-      isFlagged: form.checkbox("isFlagged"),
-      notes: form.text("notes"),
-    };
-    return id
-      ? prisma.customer.update({ where: { id }, data })
-      : prisma.customer.create({ data });
+    const data = readCustomerData(form);
+    return id ? prisma.customer.update({ where: { id }, data }) : createCustomer(data);
   },
   setDeleted: (id, restore) =>
     prisma.customer.update({

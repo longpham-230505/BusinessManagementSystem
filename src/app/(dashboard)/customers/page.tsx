@@ -3,12 +3,9 @@ import {
   type FlashSearchParams,
 } from "@/components/flash-messages";
 import { CustomerFields } from "@/components/customer-fields";
-import {
-  RowActions,
-  SubmitButton,
-  TABLE_WRAPPER_CLASS,
-} from "@/components/form-fields";
-import { saveMasterData } from "@/server/master-data";
+import { FormDialog } from "@/components/form-dialog";
+import { RowActions, TABLE_WRAPPER_CLASS } from "@/components/form-fields";
+import { createCustomerFromDialogAction } from "@/server/dialog-actions";
 import { listCustomers } from "@/server/queries/master-data.queries";
 
 export default async function CustomersPage({
@@ -20,26 +17,26 @@ export default async function CustomersPage({
 
   return (
     <div className="max-w-6xl space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">Khách hàng</h1>
-        <p className="mt-1 text-sm text-ink/60">
-          Số điện thoại không bắt buộc là duy nhất; cần kiểm tra khách trùng
-          trước khi tạo đơn.
-        </p>
+      <header className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Khách hàng</h1>
+          <p className="mt-1 text-sm text-ink/60">
+            Số điện thoại không bắt buộc là duy nhất; cần kiểm tra khách trùng trước khi tạo
+            đơn.
+          </p>
+        </div>
+        <FormDialog
+          triggerLabel="Thêm khách hàng"
+          title="Thêm khách hàng mới"
+          submitLabel="Thêm khách hàng"
+          action={createCustomerFromDialogAction}
+          widthClass="max-w-2xl"
+        >
+          <CustomerFields />
+        </FormDialog>
       </header>
 
       <FlashMessages {...flash} />
-
-      <form
-        action={saveMasterData}
-        className="grid gap-3 rounded-lg border border-line bg-white p-5 shadow-sm md:grid-cols-2"
-      >
-        <input type="hidden" name="entity" value="customer" />
-
-        <CustomerFields />
-
-        <SubmitButton className="md:col-span-2">Thêm khách hàng</SubmitButton>
-      </form>
 
       <div className={TABLE_WRAPPER_CLASS}>
         <table className="w-full text-left text-sm">
