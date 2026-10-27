@@ -37,6 +37,7 @@ export function FilmSaleOrderForm({
       <SalesOrderHeaderFields
         customers={options.customers}
         branches={options.branches}
+        serviceAtLabel="Ngày giờ giao / nhận phim"
         defaults={initial?.header}
       />
       <FilmSaleItemsEditor filmTypes={filmTypes} initialRows={initial?.items} />

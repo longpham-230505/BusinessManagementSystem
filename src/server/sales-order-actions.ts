@@ -38,6 +38,7 @@ function readHeader(form: FormReader): SalesOrderHeader {
   return {
     customerId: form.requiredText("customerId", "Khách hàng"),
     branchId: form.requiredText("branchId", "Cơ sở phụ trách"),
+    serviceAt: form.requiredDateTime("serviceAt", "Ngày giờ giao / nhận"),
     shippingFee: form.vndOrZero("shippingFee", "Phí ship"),
     discountAmount: form.vndOrZero("discountAmount", "Giảm giá"),
     notes: form.text("notes"),

@@ -1,4 +1,5 @@
 import { OrderType } from "@prisma/client";
+import { sortOrdersForList } from "@/lib/order-schedule";
 import { prisma } from "@/server/db";
 import { listFilmTypesWithStock } from "@/server/queries/film.queries";
 
@@ -14,7 +15,7 @@ export async function findOrderType(id: string): Promise<OrderType | null> {
 
 /**
  * Danh sách đơn, có thể lọc theo loại; kèm dữ liệu để tóm tắt từng loại.
- * Thứ tự hiển thị xem `sortOrdersForList`.
+ * Thứ tự hiển thị xem `sortOrdersForList` (`lib/order-schedule.ts`).
  */
 export async function listOrders(type?: OrderType) {
   const orders = await prisma.order.findMany({
@@ -30,33 +31,6 @@ export async function listOrders(type?: OrderType) {
     orderBy: { createdAt: "desc" },
   });
   return sortOrdersForList(orders);
-}
-
-type SortableOrder = {
-  orderType: OrderType;
-  createdAt: Date;
-  rentalDetail: { pickupAt: Date } | null;
-};
-
-/**
- * Thứ tự hiển thị trong danh sách đơn:
- * - Đơn thuê máy trước, xếp theo NGÀY NHẬN MÁY tăng dần (đơn nhận sớm nằm trên),
- *   không phụ thuộc thời điểm đơn được nhập vào hệ thống.
- * - Đơn bán phim / in ảnh sau, mới tạo nhất nằm trên.
- */
-export function sortOrdersForList<T extends SortableOrder>(orders: T[]): T[] {
-  const isRental = (order: T) => order.orderType === "RENTAL";
-
-  return [...orders].sort((a, b) => {
-    if (isRental(a) !== isRental(b)) return isRental(a) ? -1 : 1;
-
-    if (isRental(a)) {
-      const pickupA = a.rentalDetail?.pickupAt.getTime() ?? Infinity;
-      const pickupB = b.rentalDetail?.pickupAt.getTime() ?? Infinity;
-      return pickupA - pickupB || a.createdAt.getTime() - b.createdAt.getTime();
-    }
-    return b.createdAt.getTime() - a.createdAt.getTime();
-  });
 }
 
 export type OrderListItem = Awaited<ReturnType<typeof listOrders>>[number];

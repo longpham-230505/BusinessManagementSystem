@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Alert, FlashMessages, type FlashSearchParams } from "@/components/flash-messages";
-import { formatDateOnly } from "@/lib/datetime";
+import { formatDateOnly, formatVnDateTime } from "@/lib/datetime";
 import { ORDER_STATUS_LABEL, ORDER_TYPE_LABEL } from "@/lib/labels";
 import { formatVnd } from "@/lib/money";
 import { findSalesOrderDetail, type SalesOrderDetail } from "@/server/queries/orders.queries";
@@ -41,6 +41,9 @@ export async function SalesOrderView({ id, flash }: { id: string; flash: FlashSe
           <p className="text-sm text-ink/60">
             {ORDER_TYPE_LABEL[order.orderType]} · {order.customer.name} · {order.branch.name} ·{" "}
             <b>{ORDER_STATUS_LABEL[order.status]}</b>
+          </p>
+          <p className="mt-1 text-sm">
+            Giao / nhận: <b>{formatVnDateTime(order.serviceAt ?? order.orderDate)}</b>
           </p>
         </div>
         {!isCancelled && (

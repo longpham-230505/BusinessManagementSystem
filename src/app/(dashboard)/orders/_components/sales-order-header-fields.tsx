@@ -6,19 +6,26 @@ type Option = { id: string; name: string; phone?: string | null };
 export type SalesOrderHeaderValues = {
   customerId: string;
   branchId: string;
+  serviceAt: string;
   shippingFee: string;
   discountAmount: string;
   notes: string;
 };
 
-/** Các trường chung của đơn bán phim và đơn in ảnh: khách, cơ sở, phí ship, giảm giá, ghi chú. */
+/**
+ * Các trường chung của đơn bán phim và đơn in ảnh: khách, cơ sở, ngày giờ giao/nhận,
+ * phí ship, giảm giá, ghi chú.
+ */
 export function SalesOrderHeaderFields({
   customers,
   branches,
+  serviceAtLabel,
   defaults,
 }: {
   customers: Option[];
   branches: Option[];
+  /** Nhãn của ô ngày giờ phục vụ, ví dụ "Ngày giờ giao / nhận phim". */
+  serviceAtLabel: string;
   defaults?: SalesOrderHeaderValues;
 }) {
   return (
@@ -40,6 +47,13 @@ export function SalesOrderHeaderFields({
           ))}
         </SelectField>
 
+        <Field
+          name="serviceAt"
+          label={serviceAtLabel}
+          type="datetime-local"
+          required
+          defaultValue={defaults?.serviceAt}
+        />
         <Field
           name="discountAmount"
           label="Giảm giá (số tiền cố định)"

@@ -41,6 +41,7 @@ export function PhotoPrintOrderForm({
       <SalesOrderHeaderFields
         customers={options.customers}
         branches={options.branches}
+        serviceAtLabel="Ngày giờ giao / nhận ảnh"
         defaults={initial?.header}
       />
       <PrintItemsEditor

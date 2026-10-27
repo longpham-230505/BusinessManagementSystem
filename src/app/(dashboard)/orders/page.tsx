@@ -3,6 +3,7 @@ import Link from "next/link";
 import { TABLE_WRAPPER_CLASS } from "@/components/form-fields";
 import { formatVnDate } from "@/lib/datetime";
 import { ORDER_STATUS_LABEL, ORDER_TYPE_LABEL } from "@/lib/labels";
+import { getOrderScheduledAt } from "@/lib/order-schedule";
 import { listOrders, type OrderListItem } from "@/server/queries/orders.queries";
 
 const ORDER_TYPES = Object.values(OrderType);
@@ -46,8 +47,16 @@ export default async function OrdersPage({
             </tr>
           </thead>
           <tbody>
-            {orders.map((order) => (
-              <tr key={order.id} className="border-b border-line">
+            {orders.map((order, index) => (
+              <tr
+                key={order.id}
+                className={`border-b border-line ${
+                  // Đơn của cùng một khách nằm liền nhau; kẻ đậm hơn để thấy chỗ đổi sang khách khác.
+                  index > 0 && orders[index - 1].customerId !== order.customerId
+                    ? "border-t-2 border-t-ink/25"
+                    : ""
+                }`}
+              >
                 <td className="p-3 font-medium">
                   <Link className="text-accent underline" href={`/orders/${order.id}`}>
                     {order.orderCode}
@@ -109,30 +118,38 @@ function TypeFilter({ selected }: { selected?: OrderType }) {
   );
 }
 
-/** Tóm tắt nội dung đơn theo từng loại. */
+/**
+ * Nội dung đơn: dòng 1 là tên máy / loại phim / dịch vụ in, dòng 2 là NGÀY phục vụ (in đậm,
+ * không kèm giờ) — nhận máy với đơn thuê, giao/nhận với đơn bán phim và in ảnh —
+ * kèm tổng số ngày với đơn thuê.
+ */
 function OrderSummary({ order }: { order: OrderListItem }) {
-  switch (order.orderType) {
-    case "RENTAL":
-      return (
+  const scheduledAt = getOrderScheduledAt(order);
+
+  return (
+    <>
+      {describeContent(order)}
+      {scheduledAt && (
         <>
-          {order.rentalItems.map((item) => item.cameraInstance.assetCode).join(", ")}
+          <br />
+          <span className="text-base font-semibold text-ink">{formatVnDate(scheduledAt)}</span>
           {order.rentalDetail && (
-            <>
-              <br />
-              <span className="text-base font-semibold text-ink">
-                {formatVnDate(order.rentalDetail.pickupAt)}
-              </span>
-              <span className="text-ink/55"> · {order.rentalDetail.rentalDays} ngày</span>
-            </>
+            <span className="text-ink/55"> · {order.rentalDetail.rentalDays} ngày</span>
           )}
         </>
-      );
+      )}
+    </>
+  );
+}
 
+function describeContent(order: OrderListItem): string {
+  switch (order.orderType) {
+    case "RENTAL":
+      return order.rentalItems.map((item) => item.cameraInstance.assetCode).join(", ");
     case "FILM_SALE":
       return order.filmSaleItems
         .map((item) => `${item.quantity} × ${item.filmType.name}`)
         .join(", ");
-
     case "PHOTO_PRINT":
       return order.photoPrintItems
         .map((item) => `${item.quantity} × ${item.printService.name}`)

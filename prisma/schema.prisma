@@ -318,6 +318,7 @@ model Order {
   customerId      String      @map("customer_id") @db.Uuid
   branchId        String      @map("branch_id") @db.Uuid
   orderDate       DateTime    @map("order_date") @db.Timestamptz
+  serviceAt       DateTime?   @map("service_at") @db.Timestamptz // thời điểm đơn BÁN PHIM / IN ẢNH phải được phục vụ (giao/nhận). Đơn thuê máy để NULL vì dùng rental_details.pickup_at
   shippingFee     Decimal     @default(0) @map("shipping_fee") @db.Decimal(14, 0)
   discountAmount  Decimal     @default(0) @map("discount_amount") @db.Decimal(14, 0) // CHECK <= subtotal — kiểm tra ở tầng ứng dụng (subtotal không lưu trong DB)
   surchargeAmount Decimal     @default(0) @map("surcharge_amount") @db.Decimal(14, 0)

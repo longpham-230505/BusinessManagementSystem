@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { toVnDateTimeLocal } from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import { Alert, FlashMessages, type FlashSearchParams } from "@/components/flash-messages";
 import {
@@ -82,6 +83,8 @@ function toHeaderValues(order: SalesOrderDetail): SalesOrderHeaderValues {
   return {
     customerId: order.customerId,
     branchId: order.branchId,
+    // Đơn cũ chưa có thời điểm phục vụ thì điền sẵn ngày lập đơn để người dùng chỉnh lại.
+    serviceAt: toVnDateTimeLocal(order.serviceAt ?? order.orderDate),
     shippingFee: order.shippingFee.toString(),
     discountAmount: order.discountAmount.toString(),
     notes: order.notes ?? "",

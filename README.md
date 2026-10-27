@@ -299,6 +299,7 @@ Mỗi đơn có **đúng một loại** (`RENTAL`, `FILM_SALE`, `PHOTO_PRINT`) v
 | customer_id | UUID | |
 | branch_id | UUID | Cơ sở phụ trách (với thuê máy: cơ sở giao máy) |
 | order_date | TIMESTAMPTZ | Ngày lập đơn |
+| service_at | TIMESTAMPTZ | Nullable. Thời điểm đơn **bán phim / in ảnh** phải được phục vụ (giao/nhận) — tương đương `pickup_at` của đơn thuê. Đơn thuê máy để NULL (dùng `rental_details.pickup_at`). Dùng để sắp xếp danh sách đơn |
 | shipping_fee | NUMERIC(14,0) | Mặc định 0. Chỉ ghi nhận, **không** tính thu nhập/chi phí |
 | discount_amount | NUMERIC(14,0) | Mặc định 0. Số tiền cố định, nhập tay, tối đa 1 khoản mỗi đơn |
 | surcharge_amount | NUMERIC(14,0) | Mặc định 0. Phụ thu (trễ hạn, hư hỏng...) — tính vào doanh thu |

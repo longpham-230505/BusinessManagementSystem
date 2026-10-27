@@ -30,6 +30,8 @@ export type SalesStatus = (typeof SALES_STATUSES)[number];
 export type SalesOrderHeader = {
   customerId: string;
   branchId: string;
+  /** Thời điểm đơn phải được phục vụ (giao/nhận) — dùng để sắp xếp danh sách đơn. */
+  serviceAt: Date;
   shippingFee: Prisma.Decimal;
   discountAmount: Prisma.Decimal;
   notes: string | null;
