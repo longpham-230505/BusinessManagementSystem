@@ -2,6 +2,8 @@
 
 import { FormReader } from "@/lib/form-reader";
 import { attempt, redirectWithError, redirectWithNotice } from "@/server/form-action";
+import { readOrderAdjustments } from "@/server/order-adjustments";
+import { PAYMENT_METHODS } from "@/server/services/order-payment.service";
 import {
   createFilmSaleOrder,
   updateFilmSaleOrder,
@@ -39,8 +41,7 @@ function readHeader(form: FormReader): SalesOrderHeader {
     customerId: form.requiredText("customerId", "Khách hàng"),
     branchId: form.requiredText("branchId", "Cơ sở phụ trách"),
     serviceAt: form.requiredDateTime("serviceAt", "Ngày giờ giao / nhận"),
-    shippingFee: form.vndOrZero("shippingFee", "Phí ship"),
-    discountAmount: form.vndOrZero("discountAmount", "Giảm giá"),
+    ...readOrderAdjustments(form),
     notes: form.text("notes"),
   };
 }
@@ -153,6 +154,7 @@ export async function changeSalesOrderStatusAction(formData: FormData) {
     changeSalesOrderStatus({
       orderId,
       status: form.oneOf("status", "Trạng thái", SALES_STATUSES),
+      paymentMethod: form.oneOf("paymentMethod", "Hình thức thanh toán", PAYMENT_METHODS),
     })
   );
   if (!result.ok) redirectWithError(orderDetailPath(orderId), result.message);

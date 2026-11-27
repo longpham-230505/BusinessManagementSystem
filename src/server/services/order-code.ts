@@ -1,4 +1,4 @@
-import { OrderType } from "@prisma/client";
+import { OrderType, Prisma } from "@prisma/client";
 import { vnDateStamp } from "@/lib/datetime";
 import type { Db } from "@/server/services/types";
 
@@ -18,6 +18,37 @@ const SEQUENCE_DIGITS = 3;
  * Nếu hai người tạo đơn cùng một lúc, partial unique index trên `order_code` sẽ
  * chặn mã trùng và người tạo sau chỉ cần bấm tạo lại.
  */
+const ORDER_CODE_MAX_ATTEMPTS = 3;
+
+/** Tên partial unique index chặn trùng mã đơn (xem migration manual_changes). */
+const ORDER_CODE_INDEX = "orders_order_code_active_key";
+
+function isOrderCodeCollision(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false;
+  }
+  const target = JSON.stringify(error.meta?.target ?? "");
+  return (
+    target.includes("order_code") ||
+    target.includes(ORDER_CODE_INDEX) ||
+    error.message.includes(ORDER_CODE_INDEX)
+  );
+}
+
+/**
+ * Chạy `createOrder` (một transaction có sinh mã đơn); nếu hai người tạo đơn cùng lúc
+ * và trùng mã thì chạy lại để lấy số thứ tự kế tiếp, thay vì bắt người dùng bấm lại.
+ */
+export async function withOrderCodeRetry<T>(createOrder: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await createOrder();
+    } catch (error) {
+      if (attempt >= ORDER_CODE_MAX_ATTEMPTS || !isOrderCodeCollision(error)) throw error;
+    }
+  }
+}
+
 export async function generateOrderCode(
   db: Db,
   orderType: OrderType,

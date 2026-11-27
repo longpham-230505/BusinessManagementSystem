@@ -46,6 +46,10 @@ export function findSalesOrderDetail(id: string) {
     include: {
       customer: true,
       branch: true,
+      payments: {
+        where: { deletedAt: null, paymentType: { in: ["ORDER_PAYMENT", "ORDER_REFUND"] } },
+        orderBy: { paymentDate: "asc" },
+      },
       filmSaleItems: {
         include: { filmType: true, consumptions: { include: { filmBatch: true } } },
       },

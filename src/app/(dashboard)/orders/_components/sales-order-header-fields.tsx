@@ -1,20 +1,22 @@
 import { CustomerSelectField } from "@/components/customer-select-field";
 import { Field, SelectField } from "@/components/form-fields";
+import {
+  OrderAdjustmentFields,
+  type OrderAdjustmentValues,
+} from "@/components/order-adjustment-fields";
 
 type Option = { id: string; name: string; phone?: string | null };
 
-export type SalesOrderHeaderValues = {
+export type SalesOrderHeaderValues = OrderAdjustmentValues & {
   customerId: string;
   branchId: string;
   serviceAt: string;
-  shippingFee: string;
-  discountAmount: string;
   notes: string;
 };
 
 /**
  * Các trường chung của đơn bán phim và đơn in ảnh: khách, cơ sở, ngày giờ giao/nhận,
- * phí ship, giảm giá, ghi chú.
+ * giảm giá, phụ thu, phí ship, ghi chú.
  */
 export function SalesOrderHeaderFields({
   customers,
@@ -54,18 +56,7 @@ export function SalesOrderHeaderFields({
           required
           defaultValue={defaults?.serviceAt}
         />
-        <Field
-          name="discountAmount"
-          label="Giảm giá (số tiền cố định)"
-          type="number"
-          defaultValue={defaults?.discountAmount ?? "0"}
-        />
-        <Field
-          name="shippingFee"
-          label="Phí ship (chỉ ghi nhận, không tính doanh thu)"
-          type="number"
-          defaultValue={defaults?.shippingFee ?? "0"}
-        />
+        <OrderAdjustmentFields defaults={defaults} />
       </div>
 
       <label className="block text-sm">

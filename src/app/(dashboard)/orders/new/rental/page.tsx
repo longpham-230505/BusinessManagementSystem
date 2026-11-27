@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Field, SelectField, SubmitButton } from "@/components/form-fields";
+import { SelectField, SubmitButton } from "@/components/form-fields";
+import { OrderAdjustmentFields } from "@/components/order-adjustment-fields";
 import {
   FlashMessages,
   type FlashSearchParams,
@@ -8,6 +9,7 @@ import { createRentalOrderAction } from "@/server/rental-actions";
 import { loadNewRentalOrderOptions } from "@/server/queries/rental-orders.queries";
 import { CustomerSelectField } from "@/components/customer-select-field";
 import { CameraPicker } from "../../_components/camera-picker";
+import { RentalScheduleFields } from "../../_components/rental-schedule-fields";
 
 export default async function NewRentalOrderPage({
   searchParams,
@@ -46,18 +48,8 @@ export default async function NewRentalOrderPage({
             ))}
           </SelectField>
 
-          <Field
-            name="pickupAt"
-            label="Nhận máy"
-            type="datetime-local"
-            required
-          />
-          <Field
-            name="returnDueAt"
-            label="Hạn trả máy"
-            type="datetime-local"
-            required
-          />
+          <RentalScheduleFields />
+          <OrderAdjustmentFields />
         </div>
 
         <CameraPicker cameras={cameras} />

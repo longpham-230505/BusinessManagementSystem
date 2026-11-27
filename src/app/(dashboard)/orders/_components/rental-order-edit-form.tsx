@@ -1,12 +1,14 @@
 import { CustomerSelectField } from "@/components/customer-select-field";
-import { Field, SelectField, SubmitButton } from "@/components/form-fields";
-import { formatVnDateTime, toVnDateTimeLocal } from "@/lib/datetime";
+import { SelectField, SubmitButton } from "@/components/form-fields";
+import { OrderAdjustmentFields } from "@/components/order-adjustment-fields";
+import { toVnDateTimeLocal } from "@/lib/datetime";
 import type { RentalEditPermissions } from "@/server/services/rental-edit-rules";
 import type {
   RentalOrderDetail,
   loadNewRentalOrderOptions,
 } from "@/server/queries/rental-orders.queries";
 import { CameraPicker } from "./camera-picker";
+import { RentalScheduleFields } from "./rental-schedule-fields";
 
 type Options = Awaited<ReturnType<typeof loadNewRentalOrderOptions>>;
 
@@ -55,39 +57,21 @@ export function RentalOrderEditForm({
           ))}
         </SelectField>
 
-        {permissions.canChangePickup ? (
-          <Field
-            name="pickupAt"
-            label="Nhận máy"
-            type="datetime-local"
-            required
-            defaultValue={toVnDateTimeLocal(detail.pickupAt)}
-          />
-        ) : (
-          <LockedValue
-            name="pickupAt"
-            label="Nhận máy"
-            value={toVnDateTimeLocal(detail.pickupAt)}
-            display={formatVnDateTime(detail.pickupAt)}
-          />
-        )}
-
-        {permissions.canChangeReturnDue ? (
-          <Field
-            name="returnDueAt"
-            label="Hạn trả máy"
-            type="datetime-local"
-            required
-            defaultValue={toVnDateTimeLocal(detail.returnDueAt)}
-          />
-        ) : (
-          <LockedValue
-            name="returnDueAt"
-            label="Hạn trả máy"
-            value={toVnDateTimeLocal(detail.returnDueAt)}
-            display={formatVnDateTime(detail.returnDueAt)}
-          />
-        )}
+        <RentalScheduleFields
+          defaultPickupAt={toVnDateTimeLocal(detail.pickupAt)}
+          defaultReturnDueAt={toVnDateTimeLocal(detail.returnDueAt)}
+          defaultRentalDays={detail.rentalDays}
+          pickupLocked={!permissions.canChangePickup}
+          returnLocked={!permissions.canChangeReturnDue}
+        />
+        <OrderAdjustmentFields
+          defaults={{
+            discountAmount: order.discountAmount.toString(),
+            surchargeAmount: order.surchargeAmount.toString(),
+            surchargeNote: order.surchargeNote ?? "",
+            shippingFee: order.shippingFee.toString(),
+          }}
+        />
       </div>
 
       {permissions.canChangeCameras ? (
@@ -101,6 +85,31 @@ export function RentalOrderEditForm({
           ))}
         </div>
       )}
+
+      <fieldset className="space-y-2 text-sm">
+        <legend className="mb-1 text-ink/70">
+          Chi phí khác theo máy (hư hỏng, vệ sinh... — cộng vào doanh thu đơn)
+        </legend>
+        {order.rentalItems.map((item) => (
+          <div key={item.id} className="grid gap-2 sm:grid-cols-[8rem_10rem_1fr] sm:items-center">
+            <b>{item.cameraInstance.assetCode}</b>
+            <input type="hidden" name="otherCostCameraId" value={item.cameraInstanceId} />
+            <input
+              name="otherCost"
+              type="number"
+              min={0}
+              defaultValue={item.otherCost.toString()}
+              className="w-full rounded border border-line px-3 py-2"
+            />
+            <input
+              name="otherCostNote"
+              placeholder="Lý do"
+              defaultValue={item.otherCostNote ?? ""}
+              className="w-full rounded border border-line px-3 py-2"
+            />
+          </div>
+        ))}
+      </fieldset>
 
       <label className="block text-sm">
         <span className="mb-1 block text-ink/70">Ghi chú</span>
@@ -117,22 +126,3 @@ export function RentalOrderEditForm({
   );
 }
 
-function LockedValue({
-  name,
-  label,
-  value,
-  display,
-}: {
-  name: string;
-  label: string;
-  value: string;
-  display: string;
-}) {
-  return (
-    <div className="text-sm">
-      <span className="mb-1 block text-ink/70">{label} (đã khóa)</span>
-      <b>{display}</b>
-      <input type="hidden" name={name} value={value} />
-    </div>
-  );
-}

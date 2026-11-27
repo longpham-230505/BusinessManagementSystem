@@ -6,7 +6,7 @@ import {
   assertFilmTypesUsable,
   releaseOrderFilm,
 } from "@/server/services/film-inventory.service";
-import { generateOrderCode } from "@/server/services/order-code";
+import { generateOrderCode, withOrderCodeRetry } from "@/server/services/order-code";
 import { assertDiscountWithinSubtotal, sumLineTotals } from "@/server/services/order-totals";
 import {
   updateOrderHeaderAndLock,
@@ -34,21 +34,23 @@ export async function createPhotoPrintOrder(input: PhotoPrintOrderInput): Promis
   const { items, ...header } = input;
   validatePhotoPrintInput(input);
 
-  return prisma.$transaction(async (db) => {
-    const order = await db.order.create({
-      data: {
-        ...header,
-        orderCode: await generateOrderCode(db, OrderType.PHOTO_PRINT),
-        orderType: OrderType.PHOTO_PRINT,
-        status: OrderStatus.PENDING,
-        orderDate: new Date(),
-      },
-      select: { id: true },
-    });
+  return withOrderCodeRetry(() =>
+    prisma.$transaction(async (db) => {
+      const order = await db.order.create({
+        data: {
+          ...header,
+          orderCode: await generateOrderCode(db, OrderType.PHOTO_PRINT),
+          orderType: OrderType.PHOTO_PRINT,
+          status: OrderStatus.PENDING,
+          orderDate: new Date(),
+        },
+        select: { id: true },
+      });
 
-    await addPhotoPrintItems(db, order.id, items);
-    return order;
-  });
+      await addPhotoPrintItems(db, order.id, items);
+      return order;
+    })
+  );
 }
 
 /** Sửa đơn in ảnh: giải phóng phim đã dùng, thay các dòng, rồi phân bổ lại. */

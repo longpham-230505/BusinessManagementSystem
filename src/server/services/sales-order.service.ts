@@ -1,8 +1,13 @@
-import { OrderStatus, OrderType, type Prisma } from "@prisma/client";
+import { OrderStatus, OrderType, PaymentMethod } from "@prisma/client";
+import type { OrderAdjustments } from "@/server/order-adjustments";
 import { ORDER_STATUS_LABEL } from "@/lib/labels";
 import { prisma } from "@/server/db";
 import { BusinessRuleError } from "@/server/errors";
 import { releaseOrderFilm } from "@/server/services/film-inventory.service";
+import {
+  recordPaymentForStatus,
+  refundOrderPayments,
+} from "@/server/services/order-payment.service";
 import type { Db } from "@/server/services/types";
 
 /**
@@ -27,13 +32,11 @@ export const SALES_STATUSES = [
 export type SalesStatus = (typeof SALES_STATUSES)[number];
 
 /** Các trường chung của hai loại đơn. */
-export type SalesOrderHeader = {
+export type SalesOrderHeader = OrderAdjustments & {
   customerId: string;
   branchId: string;
   /** Thời điểm đơn phải được phục vụ (giao/nhận) — dùng để sắp xếp danh sách đơn. */
   serviceAt: Date;
-  shippingFee: Prisma.Decimal;
-  discountAmount: Prisma.Decimal;
   notes: string | null;
 };
 
@@ -66,26 +69,40 @@ export async function updateOrderHeaderAndLock(
 export async function changeSalesOrderStatus(input: {
   orderId: string;
   status: SalesStatus;
+  /** Hình thức thu tiền khi đơn chuyển sang trạng thái đã thu tiền (mặc định tiền mặt). */
+  paymentMethod?: PaymentMethod;
   at?: Date;
 }) {
-  const { orderId, status, at = new Date() } = input;
+  const { orderId, status, paymentMethod = PaymentMethod.CASH, at = new Date() } = input;
 
-  const { count } = await prisma.order.updateMany({
-    where: {
-      id: orderId,
-      orderType: { in: SALES_ORDER_TYPES },
-      deletedAt: null,
-      // Không chuyển sang chính trạng thái hiện tại, và không chuyển đơn đã hủy.
-      status: { in: SALES_STATUSES.filter((candidate) => candidate !== status) },
-    },
-    data: { status, completedAt: status === OrderStatus.COMPLETED ? at : null },
+  await prisma.$transaction(async (db) => {
+    const { count } = await db.order.updateMany({
+      where: {
+        id: orderId,
+        orderType: { in: SALES_ORDER_TYPES },
+        deletedAt: null,
+        // Không chuyển sang chính trạng thái hiện tại, và không chuyển đơn đã hủy.
+        status: { in: SALES_STATUSES.filter((candidate) => candidate !== status) },
+      },
+      data: { status, completedAt: status === OrderStatus.COMPLETED ? at : null },
+    });
+
+    if (count === 0) {
+      throw new BusinessRuleError(
+        `Không thể chuyển đơn sang "${ORDER_STATUS_LABEL[status]}": đơn không tồn tại, đã hủy hoặc đã ở trạng thái này.`
+      );
+    }
+
+    // Quay về "Chờ xử lý" không đụng tới khoản đã thu; các trạng thái còn lại ghi nhận thu tiền.
+    if (status !== OrderStatus.PENDING) {
+      await recordPaymentForStatus(db, {
+        orderId,
+        becamePaid: status === OrderStatus.PAID,
+        method: paymentMethod,
+        at,
+      });
+    }
   });
-
-  if (count === 0) {
-    throw new BusinessRuleError(
-      `Không thể chuyển đơn sang "${ORDER_STATUS_LABEL[status]}": đơn không tồn tại, đã hủy hoặc đã ở trạng thái này.`
-    );
-  }
 }
 
 /** Hủy đơn và trả lại toàn bộ phim đã phân bổ về kho. */
@@ -107,5 +124,6 @@ export async function cancelSalesOrder(input: { orderId: string; at?: Date }) {
     }
 
     await releaseOrderFilm(db, orderId);
+    await refundOrderPayments(db, { orderId, at });
   });
 }

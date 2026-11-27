@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -8,13 +9,16 @@ import {
 import { formatVnDateTime } from "@/lib/datetime";
 import { ORDER_STATUS_LABEL } from "@/lib/labels";
 import { formatVnd } from "@/lib/money";
+import { calculateOverdueDays } from "@/lib/rental-days";
 import { listBranches } from "@/server/queries/master-data.queries";
 import {
   findRentalOrderDetail,
   type RentalOrderDetail,
 } from "@/server/queries/rental-orders.queries";
+import { sumRentalSubtotal } from "@/server/services/order-totals";
 import { sumRentalFees } from "@/server/services/rental-pricing";
 import { LifecyclePanel } from "./lifecycle-panel";
+import { OrderTotalsCard } from "./order-totals-card";
 
 /** Chỉ trước khi giao máy thì vị trí máy mới cần khớp với cơ sở giao. */
 const PRE_PICKUP_STATUSES = ["PENDING_BOOKING_DEPOSIT", "BOOKED"];
@@ -43,6 +47,8 @@ export async function RentalOrderView({
         (item) => item.cameraInstance.branchId !== order.branchId
       )
     : [];
+
+  const overdueDays = findOverdueDays(order);
 
   return (
     <div className="max-w-5xl space-y-5">
@@ -74,6 +80,14 @@ export async function RentalOrderView({
           Cảnh báo: {maintenanceCodes.join(", ")} đang ở trạng thái bảo trì.
         </Alert>
       )}
+      {overdueDays > 0 && (
+        <Alert tone="warning">
+          {order.status === "RENTING"
+            ? `Đơn đang trễ hạn trả ${overdueDays} ngày.`
+            : `Máy được trả trễ ${overdueDays} ngày.`}{" "}
+          Nếu thu phí trễ hạn, hãy ghi vào Phụ thu (kèm lý do) khi sửa đơn.
+        </Alert>
+      )}
       {transferCodes.length > 0 && (
         <Alert tone="warning">
           Camera Transfer Required: {transferCodes.join(", ")} đang không ở cơ
@@ -86,8 +100,32 @@ export async function RentalOrderView({
         <CamerasCard order={order} />
       </div>
 
+      <OrderTotalsCard
+        subtotal={sumRentalSubtotal(order.rentalItems)}
+        order={order}
+        leadingRows={[["Tiền thuê máy", formatVnd(sumRentalFees(order.rentalItems))]]}
+        trailingRows={[
+          ["Chi phí khác (đã gồm trong tiền hàng)", formatVnd(sumOtherCosts(order))],
+        ]}
+      />
+
       <LifecyclePanel order={order} branches={branches} />
     </div>
+  );
+}
+
+/** Số ngày trễ: so với "bây giờ" nếu máy còn đang thuê, so với lúc trả nếu đã trả máy. */
+function findOverdueDays(order: RentalOrderDetail): number {
+  const detail = order.rentalDetail;
+  if (!detail || order.status === "CANCELLED") return 0;
+  if (order.status === "RENTING") return calculateOverdueDays(detail.returnDueAt, new Date());
+  return detail.returnedAt ? calculateOverdueDays(detail.returnDueAt, detail.returnedAt) : 0;
+}
+
+function sumOtherCosts(order: RentalOrderDetail) {
+  return order.rentalItems.reduce(
+    (total, item) => total.add(item.otherCost),
+    new Prisma.Decimal(0)
   );
 }
 

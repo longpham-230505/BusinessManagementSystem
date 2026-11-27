@@ -40,6 +40,22 @@ export function calculateOrderTotals(input: {
   return { subtotal, orderRevenue, amountDue: orderRevenue.add(shippingFee) };
 }
 
+/** Tổng cọc giữ chỗ mặc định của các máy (mỗi máy tính theo cọc mặc định của dòng máy). */
+export function sumBookingDeposits(models: { defaultBookingDeposit: Money }[]): Money {
+  return models.reduce(
+    (total, model) => total.add(model.defaultBookingDeposit),
+    new Prisma.Decimal(0)
+  );
+}
+
+/** Tiền hàng của đơn thuê: Σ (tiền thuê + chi phí khác) của từng máy. */
+export function sumRentalSubtotal(items: { rentalFee: Money; otherCost: Money }[]): Money {
+  return items.reduce(
+    (total, item) => total.add(item.rentalFee).add(item.otherCost),
+    new Prisma.Decimal(0)
+  );
+}
+
 /** Ràng buộc của spec: giảm giá không được vượt tổng tiền hàng. */
 export function assertDiscountWithinSubtotal(discountAmount: Money, subtotal: Money) {
   if (discountAmount.gt(subtotal)) {

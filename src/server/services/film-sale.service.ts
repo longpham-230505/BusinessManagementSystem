@@ -6,7 +6,7 @@ import {
   assertFilmTypesUsable,
   releaseOrderFilm,
 } from "@/server/services/film-inventory.service";
-import { generateOrderCode } from "@/server/services/order-code";
+import { generateOrderCode, withOrderCodeRetry } from "@/server/services/order-code";
 import { assertDiscountWithinSubtotal, sumLineTotals } from "@/server/services/order-totals";
 import {
   updateOrderHeaderAndLock,
@@ -28,21 +28,23 @@ export async function createFilmSaleOrder(input: FilmSaleOrderInput): Promise<{ 
   const { items, ...header } = input;
   validateFilmSaleInput(input);
 
-  return prisma.$transaction(async (db) => {
-    const order = await db.order.create({
-      data: {
-        ...header,
-        orderCode: await generateOrderCode(db, OrderType.FILM_SALE),
-        orderType: OrderType.FILM_SALE,
-        status: OrderStatus.PENDING,
-        orderDate: new Date(),
-      },
-      select: { id: true },
-    });
+  return withOrderCodeRetry(() =>
+    prisma.$transaction(async (db) => {
+      const order = await db.order.create({
+        data: {
+          ...header,
+          orderCode: await generateOrderCode(db, OrderType.FILM_SALE),
+          orderType: OrderType.FILM_SALE,
+          status: OrderStatus.PENDING,
+          orderDate: new Date(),
+        },
+        select: { id: true },
+      });
 
-    await addFilmSaleItems(db, order.id, items);
-    return order;
-  });
+      await addFilmSaleItems(db, order.id, items);
+      return order;
+    })
+  );
 }
 
 /**

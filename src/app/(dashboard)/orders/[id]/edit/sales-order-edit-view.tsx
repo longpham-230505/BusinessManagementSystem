@@ -87,6 +87,8 @@ function toHeaderValues(order: SalesOrderDetail): SalesOrderHeaderValues {
     serviceAt: toVnDateTimeLocal(order.serviceAt ?? order.orderDate),
     shippingFee: order.shippingFee.toString(),
     discountAmount: order.discountAmount.toString(),
+    surchargeAmount: order.surchargeAmount.toString(),
+    surchargeNote: order.surchargeNote ?? "",
     notes: order.notes ?? "",
   };
 }

@@ -7,6 +7,7 @@ import {
   redirectWithError,
   redirectWithNotice,
 } from "@/server/form-action";
+import { readOrderAdjustments } from "@/server/order-adjustments";
 import { SECURITY_DEPOSIT_KINDS } from "@/server/services/deposit.service";
 import {
   cancelRental,
@@ -18,6 +19,7 @@ import {
   startRental,
   updateRentalOrder,
   type CreateRentalOrderInput,
+  type RentalOtherCost,
 } from "@/server/services/rental.service";
 
 /**
@@ -45,8 +47,19 @@ function readCreateRentalOrderForm(form: FormReader): CreateRentalOrderInput {
     cameraIds,
     pickupAt: form.requiredDateTime("pickupAt", "Thời điểm nhận máy"),
     returnDueAt: form.requiredDateTime("returnDueAt", "Hạn trả máy"),
+    rentalDays: form.text("rentalDays") === null ? null : form.positiveInt("rentalDays", "Số ngày thuê"),
+    ...readOrderAdjustments(form),
     notes: form.text("notes"),
   };
+}
+
+/** Chi phí khác của từng máy (chỉ có trong form sửa đơn). */
+function readOtherCosts(form: FormReader): RentalOtherCost[] {
+  return form.rows(["otherCostCameraId", "otherCost", "otherCostNote"]).map((row) => ({
+    cameraInstanceId: row.requiredText("otherCostCameraId", "Máy"),
+    amount: row.vndOrZero("otherCost", "Chi phí khác"),
+    note: row.text("otherCostNote"),
+  }));
 }
 
 export async function createRentalOrderAction(formData: FormData) {
@@ -69,7 +82,10 @@ export async function updateRentalOrderAction(formData: FormData) {
   const orderId = String(formData.get("orderId") ?? "");
 
   const result = await attempt(() =>
-    updateRentalOrder(orderId, readCreateRentalOrderForm(form))
+    updateRentalOrder(orderId, {
+      ...readCreateRentalOrderForm(form),
+      otherCosts: readOtherCosts(form),
+    })
   );
   if (!result.ok) redirectWithError(`/orders/${orderId}/edit`, result.message);
 

@@ -3,6 +3,7 @@ import type {
   DepositKind,
   OrderStatus,
   OrderType,
+  PaymentMethod,
 } from "@prisma/client";
 
 /** Nhãn tiếng Việt cho các enum — dùng thay vì in thẳng giá trị enum ra giao diện. */
@@ -30,6 +31,12 @@ export const DEPOSIT_KIND_LABEL: Record<DepositKind, string> = {
   SECURITY_CASH: "Cọc tiền mặt",
   SECURITY_ITEM: "Cọc tài sản",
   SECURITY_NONE: "Không cọc",
+};
+
+export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
+  CASH: "Tiền mặt",
+  BANK_TRANSFER: "Chuyển khoản",
+  OTHER: "Khác",
 };
 
 export const ORDER_TYPE_LABEL: Record<OrderType, string> = {

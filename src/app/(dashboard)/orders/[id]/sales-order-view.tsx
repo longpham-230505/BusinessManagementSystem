@@ -1,16 +1,18 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Alert, FlashMessages, type FlashSearchParams } from "@/components/flash-messages";
 import { formatDateOnly, formatVnDateTime } from "@/lib/datetime";
-import { ORDER_STATUS_LABEL, ORDER_TYPE_LABEL } from "@/lib/labels";
+import { ORDER_STATUS_LABEL, ORDER_TYPE_LABEL, PAYMENT_METHOD_LABEL } from "@/lib/labels";
 import { formatVnd } from "@/lib/money";
 import { findSalesOrderDetail, type SalesOrderDetail } from "@/server/queries/orders.queries";
 import { sumConsumptionCost } from "@/server/services/fifo";
 import { calculateOrderTotals, lineTotal, sumLineTotals } from "@/server/services/order-totals";
+import { PAYMENT_METHODS } from "@/server/services/order-payment.service";
 import { SALES_STATUSES } from "@/server/services/sales-order.service";
 import { cancelSalesOrderAction, changeSalesOrderStatusAction } from "@/server/sales-order-actions";
 import { EventForm, INLINE_INPUT_CLASS, InlineField } from "./event-form";
+import { OrderTotalsCard } from "./order-totals-card";
 
 type Consumption = {
   quantity: number;
@@ -97,6 +99,15 @@ function StatusForm({
           {otherStatuses.map((status) => (
             <option key={status} value={status}>
               {ORDER_STATUS_LABEL[status]}
+            </option>
+          ))}
+        </select>
+      </InlineField>
+      <InlineField label="Hình thức thu tiền (nếu cần thu)">
+        <select name="paymentMethod" className={INLINE_INPUT_CLASS}>
+          {PAYMENT_METHODS.map((method) => (
+            <option key={method} value={method}>
+              {PAYMENT_METHOD_LABEL[method]}
             </option>
           ))}
         </select>
@@ -203,28 +214,23 @@ function TotalsCard({
     shippingFee: order.shippingFee,
   });
   const cost = sumConsumptionCost(consumptions);
-
-  const rows: [string, string, boolean?][] = [
-    ["Tổng tiền hàng", formatVnd(totals.subtotal)],
-    ["Giảm giá", `− ${formatVnd(order.discountAmount)}`],
-    ["Doanh thu đơn", formatVnd(totals.orderRevenue), true],
-    ["Phí ship (không tính doanh thu)", formatVnd(order.shippingFee)],
-    ["Khách cần trả", formatVnd(totals.amountDue), true],
-    ["Giá vốn (FIFO)", formatVnd(cost)],
-    ["Lãi gộp tạm tính", formatVnd(totals.orderRevenue.sub(cost)), true],
-  ];
+  const paid = order.payments.reduce(
+    (total, payment) =>
+      payment.paymentType === "ORDER_PAYMENT" ? total.add(payment.amount) : total.sub(payment.amount),
+    new Prisma.Decimal(0)
+  );
+  const outstanding = order.status === "CANCELLED" ? new Prisma.Decimal(0) : totals.amountDue.sub(paid);
 
   return (
-    <section className="rounded border border-line bg-white p-5">
-      <h2 className="mb-3 font-medium">Tổng kết</h2>
-      <dl className="space-y-1 text-sm">
-        {rows.map(([label, value, strong]) => (
-          <div key={label} className="flex justify-between gap-3">
-            <dt className="text-ink/70">{label}</dt>
-            <dd className={strong ? "font-semibold" : ""}>{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
+    <OrderTotalsCard
+      subtotal={subtotal}
+      order={order}
+      trailingRows={[
+        ["Đã thu (ròng)", formatVnd(paid)],
+        ["Còn thiếu", formatVnd(outstanding.lt(0) ? new Prisma.Decimal(0) : outstanding), true],
+        ["Giá vốn (FIFO)", formatVnd(cost)],
+        ["Lãi gộp tạm tính", formatVnd(totals.orderRevenue.sub(cost)), true],
+      ]}
+    />
   );
 }
