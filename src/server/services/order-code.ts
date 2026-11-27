@@ -27,12 +27,10 @@ function isOrderCodeCollision(error: unknown): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
     return false;
   }
-  const target = JSON.stringify(error.meta?.target ?? "");
-  return (
-    target.includes("order_code") ||
-    target.includes(ORDER_CODE_INDEX) ||
-    error.message.includes(ORDER_CODE_INDEX)
-  );
+  // Với driver adapter, cột/constraint vi phạm nằm trong `meta.driverAdapterError`
+  // (không còn `meta.target` như engine cũ), nên tìm trong toàn bộ `meta` và message.
+  const details = `${JSON.stringify(error.meta ?? {})} ${error.message}`;
+  return details.includes("order_code") || details.includes(ORDER_CODE_INDEX);
 }
 
 /**

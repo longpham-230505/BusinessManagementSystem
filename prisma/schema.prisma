@@ -20,7 +20,10 @@
 // ============================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  // Query compiler không dùng engine Rust: bundle nhỏ hơn và chạy được trên Cloudflare Workers.
+  // Bắt buộc dùng driver adapter (@prisma/adapter-pg) — xem src/server/db.ts.
+  engineType = "client"
 }
 
 datasource db {
