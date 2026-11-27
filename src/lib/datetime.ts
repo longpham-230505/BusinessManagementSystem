@@ -57,6 +57,41 @@ export function formatVnDate(date: Date): string {
   return date.toLocaleDateString("vi-VN", { timeZone: VN_TIME_ZONE });
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** 00:00 giờ Việt Nam của ngày chứa `date`. */
+export function vnStartOfDay(date: Date): Date {
+  const vnMs = date.getTime() + VN_UTC_OFFSET_MS;
+  return new Date(vnMs - (((vnMs % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY) - VN_UTC_OFFSET_MS);
+}
+
+/** 00:00 giờ Việt Nam của thứ Hai đầu tuần chứa `date` (tuần Thứ 2 → Chủ nhật). */
+export function vnStartOfWeek(date: Date): Date {
+  const dayStart = vnStartOfDay(date);
+  const weekday = new Date(dayStart.getTime() + VN_UTC_OFFSET_MS).getUTCDay(); // 0 = Chủ nhật
+  return new Date(dayStart.getTime() - ((weekday + 6) % 7) * MS_PER_DAY);
+}
+
+/** Cộng `days` ngày (Việt Nam không có giờ mùa hè nên mỗi ngày đúng 24 giờ). */
+export function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * MS_PER_DAY);
+}
+
+/** Ngày theo giờ Việt Nam dạng YYYY-MM-DD. */
+export function vnDateKey(date: Date): string {
+  return new Date(date.getTime() + VN_UTC_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * Đọc tham số tuần `YYYY-MM-DD` (ngày bất kỳ trong tuần, theo giờ Việt Nam) và trả về
+ * thứ Hai đầu tuần đó. Sai định dạng hoặc để trống thì dùng tuần hiện tại.
+ */
+export function parseWeekParam(value: string | undefined, now: Date = new Date()): Date {
+  const parsed = value ? parseDateOnly(value) : null;
+  // `parseDateOnly` trả về 00:00 UTC của ngày đó; đổi sang 00:00 giờ Việt Nam cùng ngày.
+  return vnStartOfWeek(parsed ? new Date(parsed.getTime() - VN_UTC_OFFSET_MS) : now);
+}
+
 /** Chuyển một thời điểm thành giá trị cho `<input type="datetime-local">` theo giờ Việt Nam. */
 export function toVnDateTimeLocal(date: Date): string {
   return new Date(date.getTime() + VN_UTC_OFFSET_MS).toISOString().slice(0, 16);

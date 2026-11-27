@@ -1,29 +1,91 @@
-import { requireSession } from "@/server/auth";
-import { prisma } from "@/server/db";
+import Link from "next/link";
+import { addDays, parseWeekParam, VN_TIME_ZONE, vnDateKey } from "@/lib/datetime";
+import { RENTAL_TIMELINE_STYLE } from "@/lib/labels";
+import { loadCameraTimeline } from "@/server/queries/timeline.queries";
+import { CameraTimeline } from "./_components/camera-timeline";
 
-export default async function DashboardPage() {
-  const session = await requireSession();
+const NAV_BUTTON_CLASS = "rounded border border-line px-3 py-1.5 text-sm hover:bg-ink/5";
 
-  // Kiểm tra kết nối database thật (tiêu chí nghiệm thu Giai đoạn 0
-  // trong Implementation Plan) — không hiển thị dữ liệu nghiệp vụ nào,
-  // các báo cáo thật sẽ đến ở Giai đoạn 5.
-  const userCount = await prisma.user.count();
+const weekHref = (weekStart: Date) => `/?week=${vnDateKey(weekStart)}`;
+
+function formatDayMonth(date: Date, withYear: boolean): string {
+  return date.toLocaleDateString("vi-VN", {
+    timeZone: VN_TIME_ZONE,
+    day: "2-digit",
+    month: "2-digit",
+    ...(withYear ? { year: "numeric" } : {}),
+  });
+}
+
+/** Dashboard: lịch tuần của từng máy ảnh (ai thuê, từ ngày nào đến ngày nào). */
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ week?: string }>;
+}) {
+  const { week } = await searchParams;
+  const weekStart = parseWeekParam(week);
+  const weekEnd = addDays(weekStart, 6);
+  const { cameras, bookings } = await loadCameraTimeline(weekStart);
 
   return (
-    <div className="max-w-lg">
-      <h1 className="text-lg font-semibold">Chào {session.displayName}</h1>
-      <p className="mt-1 text-sm text-ink/60">
-        Đây là khung dashboard trống của Giai đoạn 0. Các mục Đơn hàng, Máy ảnh,
-        Phim, Khách hàng, Tài chính sẽ được bổ sung ở các giai đoạn tiếp theo
-        (xem Implementation Plan, mục 2).
-      </p>
+    <div className="max-w-7xl space-y-4">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">
+            Lịch tuần {formatDayMonth(weekStart, false)} – {formatDayMonth(weekEnd, true)}
+          </h1>
+          <p className="mt-1 text-sm text-ink/60">
+            Mỗi dòng là một máy; bấm vào lượt thuê để mở đơn.
+          </p>
+        </div>
+        <Link
+          href="/orders/new/rental"
+          className="rounded bg-accent px-4 py-2 text-sm font-medium text-paper"
+        >
+          Tạo đơn thuê
+        </Link>
+      </header>
 
-      <div className="mt-6 rounded-md border border-line bg-white p-4 text-sm">
-        <p className="font-medium">Kết nối database</p>
-        <p className="mt-1 text-ink/60">
-          OK — hiện có {userCount} tài khoản nội bộ trong hệ thống.
-        </p>
-      </div>
+      <nav className="flex flex-wrap items-center gap-2">
+        <Link href={weekHref(addDays(weekStart, -7))} className={NAV_BUTTON_CLASS}>
+          ← Tuần trước
+        </Link>
+        <Link href="/" className={NAV_BUTTON_CLASS}>
+          Hôm nay
+        </Link>
+        <Link href={weekHref(addDays(weekStart, 7))} className={NAV_BUTTON_CLASS}>
+          Tuần sau →
+        </Link>
+        <form method="get" className="flex items-center gap-2 sm:ml-3">
+          <input
+            type="date"
+            name="week"
+            defaultValue={vnDateKey(weekStart)}
+            className="rounded border border-line px-2 py-1.5 text-sm"
+          />
+          <button className={NAV_BUTTON_CLASS}>Đến ngày</button>
+        </form>
+      </nav>
+
+      <Legend />
+
+      <CameraTimeline weekStart={weekStart} cameras={cameras} bookings={bookings} />
     </div>
+  );
+}
+
+function Legend() {
+  return (
+    <ul className="flex flex-wrap gap-2 text-xs">
+      {Object.values(RENTAL_TIMELINE_STYLE).map((style) => (
+        <li key={style.label} className={`rounded border px-2 py-0.5 ${style.className}`}>
+          {style.label}
+        </li>
+      ))}
+      <li className="rounded border border-yellow-300 bg-yellow-50 px-2 py-0.5 text-yellow-900">
+        Máy đang bảo trì
+      </li>
+    </ul>
   );
 }
