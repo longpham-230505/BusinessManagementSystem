@@ -34,7 +34,8 @@ Windows: OpenNext cảnh báo chưa hỗ trợ chính thức nhưng build/previe
 chọn repo này.
 - Production branch: `main`
 - Build command: `npm ci && npm run build:cf`
-- Deploy command: `npx wrangler deploy`
+- Deploy command: `npx wrangler deploy` (hoặc `npx opennextjs-cloudflare deploy` — cả hai đều chạy được; lệnh thứ hai cần `localConnectionString` giả trong `wrangler.jsonc`, đã có sẵn)
+- Non-production branch deploy command: `npx wrangler versions upload` (cần khối `previews` trong `wrangler.jsonc`, đã có sẵn; secret `SESSION_SECRET` của preview đặt riêng trong dashboard)
 - Biến build: không cần `DATABASE_URL` (build không đọc database).
 
 **Cách 2 — GitHub Actions:** secrets `CLOUDFLARE_API_TOKEN` (quyền Workers edit) và
