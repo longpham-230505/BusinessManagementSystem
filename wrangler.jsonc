@@ -22,9 +22,13 @@
 		{
 			"binding": "HYPERDRIVE",
 			// Thay bằng id lấy từ: npx wrangler hyperdrive create abms --connection-string="<DIRECT_URL của Neon>"
-			"id": "2317d9661587421fa947d9f59959881a"
-			// Preview local (opennextjs-cloudflare preview) đọc chuỗi kết nối từ biến môi trường
-			// CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE — không ghi vào file này.
+			"id": "2317d9661587421fa947d9f59959881a",
+			// Chuỗi kết nối GIẢ (không phải database thật, không chứa mật khẩu). Wrangler bắt buộc có
+			// một chuỗi local cho binding Hyperdrive mỗi khi khởi động proxy local — `opennextjs-cloudflare
+			// deploy` (bước deploy trên Cloudflare Workers Builds) cũng làm vậy dù không truy vấn gì.
+			// Chuỗi này KHÔNG được deploy lên Worker. Muốn chạy preview local với database thật, đặt biến
+			// CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE (biến môi trường được ưu tiên hơn).
+			"localConnectionString": "postgresql://placeholder:placeholder@localhost:5432/placeholder"
 		}
 	],
 	// Bản preview (build của nhánh không phải production, vd. nhánh của pull request) cần khối
