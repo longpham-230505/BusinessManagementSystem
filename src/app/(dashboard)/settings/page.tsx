@@ -3,13 +3,7 @@ import {
   FlashMessages,
   type FlashSearchParams,
 } from "@/components/flash-messages";
-import {
-  CheckboxField,
-  Field,
-  SelectField,
-  SoftDeleteForm,
-  SubmitButton,
-} from "@/components/form-fields";
+import { RowActions, SubmitButton } from "@/components/form-fields";
 import { formatVnd } from "@/lib/money";
 import { saveMasterData } from "@/server/master-data";
 import {
@@ -18,9 +12,15 @@ import {
   listFilmTypes,
   listPrintServices,
   listTransactionCategories,
+  type SettingsEntityName,
 } from "@/server/queries/master-data.queries";
-
-const DEFAULT_BOOKING_DEPOSIT = 40000;
+import {
+  BranchFields,
+  CameraModelFields,
+  FilmTypeFields,
+  PrintServiceFields,
+  TransactionCategoryFields,
+} from "./entity-fields";
 
 const activeLabel = (active: boolean) => (active ? "Đang dùng" : "Ngưng dùng");
 
@@ -29,15 +29,14 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<FlashSearchParams>;
 }) {
-  const [branches, models, films, services, categories, flash] =
-    await Promise.all([
-      listBranches(),
-      listCameraModels(),
-      listFilmTypes(),
-      listPrintServices(),
-      listTransactionCategories(),
-      searchParams,
-    ]);
+  const [branches, models, films, services, categories, flash] = await Promise.all([
+    listBranches(),
+    listCameraModels(),
+    listFilmTypes(),
+    listPrintServices(),
+    listTransactionCategories(),
+    searchParams,
+  ]);
 
   return (
     <div className="max-w-6xl space-y-10">
@@ -52,9 +51,7 @@ export default async function SettingsPage({
 
       <SettingsSection>
         <EntityForm title="Cơ sở mới" entity="branch">
-          <Field name="name" label="Tên cơ sở" required />
-          <Field name="address" label="Địa chỉ" />
-          <Field name="notes" label="Ghi chú" />
+          <BranchFields />
         </EntityForm>
         <EntityList
           title="Cơ sở"
@@ -71,26 +68,7 @@ export default async function SettingsPage({
 
       <SettingsSection>
         <EntityForm title="Model máy mới" entity="cameraModel">
-          <Field name="name" label="Tên model" required />
-          <Field
-            name="defaultBookingDeposit"
-            label="Cọc giữ chỗ mặc định"
-            type="number"
-            defaultValue={DEFAULT_BOOKING_DEPOSIT}
-            required
-          />
-          <Field
-            name="defaultPrice1day"
-            label="Giá thuê 1 ngày mặc định"
-            type="number"
-          />
-          <Field
-            name="defaultPriceCombo3"
-            label="Giá combo 3 ngày mặc định"
-            type="number"
-          />
-          <Field name="description" label="Mô tả" />
-          <ActiveCheckbox />
+          <CameraModelFields />
         </EntityForm>
         <EntityList
           title="Model máy"
@@ -100,8 +78,7 @@ export default async function SettingsPage({
             <>
               <b>{model.name}</b>
               <span>
-                Cọc {formatVnd(model.defaultBookingDeposit)} ·{" "}
-                {activeLabel(model.active)}
+                Cọc {formatVnd(model.defaultBookingDeposit)} · {activeLabel(model.active)}
               </span>
             </>
           )}
@@ -110,14 +87,7 @@ export default async function SettingsPage({
 
       <SettingsSection>
         <EntityForm title="Loại phim mới" entity="filmType">
-          <Field name="name" label="Tên loại phim" required />
-          <Field
-            name="defaultSalePrice"
-            label="Giá bán mặc định"
-            type="number"
-            required
-          />
-          <ActiveCheckbox />
+          <FilmTypeFields />
         </EntityForm>
         <EntityList
           title="Loại phim"
@@ -136,9 +106,7 @@ export default async function SettingsPage({
 
       <SettingsSection>
         <EntityForm title="Dịch vụ in mới" entity="printService">
-          <Field name="name" label="Tên dịch vụ" required />
-          <Field name="unitPrice" label="Đơn giá" type="number" required />
-          <ActiveCheckbox />
+          <PrintServiceFields />
         </EntityForm>
         <EntityList
           title="Dịch vụ in"
@@ -157,12 +125,7 @@ export default async function SettingsPage({
 
       <SettingsSection>
         <EntityForm title="Danh mục tài chính mới" entity="transactionCategory">
-          <Field name="name" label="Tên danh mục" required />
-          <SelectField name="transactionType" label="Loại">
-            <option value="EXPENSE">Chi phí</option>
-            <option value="INCOME">Thu nhập khác</option>
-          </SelectField>
-          <ActiveCheckbox />
+          <TransactionCategoryFields />
         </EntityForm>
         <EntityList
           title="Danh mục tài chính"
@@ -172,10 +135,8 @@ export default async function SettingsPage({
             <>
               <b>{category.name}</b>
               <span>
-                {category.transactionType === "EXPENSE"
-                  ? "Chi phí"
-                  : "Thu nhập"}{" "}
-                · {activeLabel(category.active)}
+                {category.transactionType === "EXPENSE" ? "Chi phí" : "Thu nhập"} ·{" "}
+                {activeLabel(category.active)}
               </span>
             </>
           )}
@@ -190,17 +151,13 @@ function SettingsSection({ children }: { children: ReactNode }) {
   return <section className="grid gap-6 lg:grid-cols-2">{children}</section>;
 }
 
-function ActiveCheckbox() {
-  return <CheckboxField name="active" label="Đang sử dụng" defaultChecked />;
-}
-
 function EntityForm({
   title,
   entity,
   children,
 }: {
   title: string;
-  entity: string;
+  entity: SettingsEntityName;
   children: ReactNode;
 }) {
   return (
@@ -223,7 +180,7 @@ function EntityList<T extends { id: string }>({
   render,
 }: {
   title: string;
-  entity: string;
+  entity: SettingsEntityName;
   items: T[];
   render: (item: T) => ReactNode;
 }) {
@@ -237,7 +194,11 @@ function EntityList<T extends { id: string }>({
             className="flex items-center justify-between gap-3 py-3 text-sm"
           >
             <div className="grid">{render(item)}</div>
-            <SoftDeleteForm entity={entity} id={item.id} />
+            <RowActions
+              editHref={`/settings/${entity}/${item.id}/edit`}
+              entity={entity}
+              id={item.id}
+            />
           </div>
         ))}
         {items.length === 0 && (

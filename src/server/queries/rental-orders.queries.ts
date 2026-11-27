@@ -3,19 +3,6 @@ import { prisma } from "@/server/db";
 
 /** Các truy vấn đọc dữ liệu cho các trang đơn thuê. */
 
-export function listRentalOrders() {
-  return prisma.order.findMany({
-    where: { orderType: OrderType.RENTAL, deletedAt: null },
-    include: {
-      customer: true,
-      branch: true,
-      rentalDetail: true,
-      rentalItems: { include: { cameraInstance: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-}
-
 export function findRentalOrderDetail(id: string) {
   return prisma.order.findFirst({
     where: { id, orderType: OrderType.RENTAL, deletedAt: null },

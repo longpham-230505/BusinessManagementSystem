@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { MAX_RENTAL_DAYS, suggestRentalDays } from "@/lib/rental-days";
 import { BusinessRuleError } from "@/server/errors";
 
 /**
@@ -8,7 +9,6 @@ import { BusinessRuleError } from "@/server/errors";
  */
 
 const COMBO_DAYS = 3;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 type Money = Prisma.Decimal | number;
 
@@ -18,13 +18,33 @@ export type RentalPrice = {
   rentalFee: Prisma.Decimal;
 };
 
-/** Số ngày thuê, làm tròn LÊN theo từng khoảng 24 giờ (25 giờ = 2 ngày). */
+/** Số ngày thuê gợi ý, làm tròn LÊN theo từng khoảng 24 giờ (25 giờ = 2 ngày). */
 export function calculateRentalDays(pickupAt: Date, returnDueAt: Date): number {
-  const durationMs = returnDueAt.getTime() - pickupAt.getTime();
-  if (durationMs <= 0) {
+  const days = suggestRentalDays(pickupAt, returnDueAt);
+  if (days === null) {
     throw new BusinessRuleError("Thời điểm trả phải sau thời điểm nhận máy.");
   }
-  return Math.ceil(durationMs / MS_PER_DAY);
+  return days;
+}
+
+/**
+ * Số ngày thuê chốt cho đơn: người dùng có thể nhập tay (gợi ý chỉ là giá trị mặc định);
+ * để trống thì dùng số ngày gợi ý theo thời gian. Vẫn bắt buộc thời điểm trả sau thời điểm nhận.
+ */
+export function resolveRentalDays(
+  pickupAt: Date,
+  returnDueAt: Date,
+  requestedDays: number | null | undefined
+): number {
+  const suggested = calculateRentalDays(pickupAt, returnDueAt);
+  if (requestedDays === null || requestedDays === undefined) return suggested;
+  if (!Number.isInteger(requestedDays) || requestedDays <= 0) {
+    throw new BusinessRuleError("Số ngày thuê phải là số nguyên lớn hơn 0.");
+  }
+  if (requestedDays > MAX_RENTAL_DAYS) {
+    throw new BusinessRuleError(`Số ngày thuê tối đa là ${MAX_RENTAL_DAYS}.`);
+  }
+  return requestedDays;
 }
 
 export function calculateRentalPrice(

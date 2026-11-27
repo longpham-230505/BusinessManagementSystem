@@ -24,6 +24,11 @@ const PRISMA_ERROR_MESSAGES: Record<string, string> = {
 
 /** Tên exclusion constraint chống double booking (xem prisma/migrations/*_manual_changes). */
 const DOUBLE_BOOKING_CONSTRAINT = "no_double_booking";
+/** CHECK constraint chặn tồn kho phim âm (xem migration manual_changes). */
+const NEGATIVE_STOCK_CONSTRAINT = "film_batches_quantity_remaining_nonneg";
+const NEGATIVE_STOCK_MESSAGE =
+  "Tồn kho phim không đủ (có thể vừa có thao tác khác dùng phim). Hãy tải lại trang và thử lại.";
+
 /** SQLSTATE của exclusion_violation trong PostgreSQL. */
 const EXCLUSION_VIOLATION_CODE = "23P01";
 
@@ -46,6 +51,9 @@ function isDoubleBookingViolation(error: unknown): boolean {
 export function toUserMessage(error: unknown): string {
   if (error instanceof BusinessRuleError) return error.message;
   if (isDoubleBookingViolation(error)) return DOUBLE_BOOKING_MESSAGE;
+  if (error instanceof Error && error.message.includes(NEGATIVE_STOCK_CONSTRAINT)) {
+    return NEGATIVE_STOCK_MESSAGE;
+  }
 
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
     const message = PRISMA_ERROR_MESSAGES[error.code];

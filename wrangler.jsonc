@@ -1,0 +1,47 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "abms",
+	"main": ".open-next/worker.js",
+	"compatibility_date": "2026-11-01",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	// Chạy Worker gần database (Neon) thay vì gần người dùng: mỗi trang cần vài query tuần tự.
+	"placement": {
+		"mode": "smart"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			// Thay bằng id lấy từ: npx wrangler hyperdrive create abms --connection-string="<DIRECT_URL của Neon>"
+			"id": "2317d9661587421fa947d9f59959881a"
+			// Preview local (opennextjs-cloudflare preview) đọc chuỗi kết nối từ biến môi trường
+			// CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE — không ghi vào file này.
+		}
+	],
+	// Bản preview (build của nhánh không phải production, vd. nhánh của pull request) cần khối
+	// "previews" riêng. Hiện chỉ có MỘT database Neon (dùng để test) nên preview dùng chung
+	// Hyperdrive với production. Khi có database/branch Neon riêng cho preview, tạo Hyperdrive mới
+	// và thay id bên dưới để preview không đụng dữ liệu thật.
+	"previews": {
+		"hyperdrive": [
+			{
+				"binding": "HYPERDRIVE",
+				"id": "2317d9661587421fa947d9f59959881a"
+			}
+		],
+		"placement": {
+			"mode": "smart"
+		}
+	}
+	// Secret (SESSION_SECRET) đặt bằng: npx wrangler secret put SESSION_SECRET
+	// (preview dùng secret riêng, đặt trong Cloudflare dashboard → Settings → Variables and Secrets).
+}

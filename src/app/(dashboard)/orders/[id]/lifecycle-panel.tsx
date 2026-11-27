@@ -10,6 +10,7 @@ import {
   startRentalAction,
 } from "@/server/rental-actions";
 import type { RentalOrderDetail } from "@/server/queries/rental-orders.queries";
+import { sumBookingDeposits } from "@/server/services/order-totals";
 import { EventForm, INLINE_INPUT_CLASS, InlineField } from "./event-form";
 
 const FINISHED_STATUSES: OrderStatus[] = ["COMPLETED", "CANCELLED"];
@@ -31,13 +32,17 @@ export function LifecyclePanel({
       <h2 className="font-medium">Thao tác vòng đời</h2>
 
       {order.status === "PENDING_BOOKING_DEPOSIT" && (
-        <BookingDepositForm orderId={order.id} />
+        <BookingDepositForm
+          orderId={order.id}
+          defaultAmount={suggestBookingDeposit(order)}
+        />
       )}
       {order.status === "BOOKED" && <StartRentalForm orderId={order.id} />}
       {order.status === "RENTING" && (
         <ReturnRentalForm orderId={order.id} branches={branches} />
       )}
       {order.status === "RETURNED" && <SettlementSection order={order} />}
+      {order.status === "CANCELLED" && <CancelledDepositSection order={order} />}
 
       {canCancel && (
         <EventForm
@@ -50,20 +55,33 @@ export function LifecyclePanel({
   );
 }
 
-function BookingDepositForm({ orderId }: { orderId: string }) {
+/** Cọc giữ chỗ gợi ý = tổng cọc mặc định theo dòng máy của các máy trong đơn. */
+function suggestBookingDeposit(order: RentalOrderDetail): string {
+  return sumBookingDeposits(
+    order.rentalItems.map((item) => item.cameraInstance.cameraModel)
+  ).toString();
+}
+
+function BookingDepositForm({
+  orderId,
+  defaultAmount,
+}: {
+  orderId: string;
+  defaultAmount: string;
+}) {
   return (
     <EventForm
       orderId={orderId}
       action={receiveBookingDepositAction}
       submitLabel="Nhận cọc giữ chỗ"
     >
-      <InlineField label="Số tiền">
+      <InlineField label="Số tiền (gợi ý theo số máy, có thể sửa)">
         <input
           required
           name="amount"
           type="number"
           min="0"
-          defaultValue={40000}
+          defaultValue={defaultAmount}
           className={`${INLINE_INPUT_CLASS} w-36`}
         />
       </InlineField>
@@ -133,53 +151,74 @@ function ReturnRentalForm({
   );
 }
 
-/** Sau khi trả máy: xử lý từng khoản cọc chưa giải quyết, rồi hoàn tất đơn. */
-function SettlementSection({ order }: { order: RentalOrderDetail }) {
+/** Các form xử lý (hoàn/giữ) từng khoản cọc chưa giải quyết của đơn. */
+function DepositResolutionForms({ order }: { order: RentalOrderDetail }) {
   const unresolvedDeposits = order.deposits.filter(
     (deposit) => !deposit.resolvedAt
   );
 
   return (
-    <>
-      <div className="space-y-2">
-        {unresolvedDeposits.map((deposit) => (
-          <EventForm
-            key={deposit.id}
-            orderId={order.id}
-            action={resolveDepositAction}
-            submitLabel="Xử lý cọc"
-          >
-            <input type="hidden" name="depositId" value={deposit.id} />
-            <span className="text-sm">
-              {DEPOSIT_KIND_LABEL[deposit.kind]}: đã nhận{" "}
-              {formatVnd(deposit.amountReceived)}
-            </span>
-            <InlineField label="Hoàn">
-              <input
-                name="refunded"
-                type="number"
-                min="0"
-                defaultValue="0"
-                className={`${INLINE_INPUT_CLASS} w-24`}
-              />
-            </InlineField>
-            <InlineField label="Giữ">
-              <input
-                name="forfeited"
-                type="number"
-                min="0"
-                defaultValue="0"
-                className={`${INLINE_INPUT_CLASS} w-24`}
-              />
-            </InlineField>
+    <div className="space-y-2">
+      {unresolvedDeposits.map((deposit) => (
+        <EventForm
+          key={deposit.id}
+          orderId={order.id}
+          action={resolveDepositAction}
+          submitLabel="Xử lý cọc"
+        >
+          <input type="hidden" name="depositId" value={deposit.id} />
+          <span className="text-sm">
+            {DEPOSIT_KIND_LABEL[deposit.kind]}: đã nhận{" "}
+            {formatVnd(deposit.amountReceived)}
+          </span>
+          <InlineField label="Hoàn">
             <input
-              name="resolutionNote"
-              placeholder="Lý do"
-              className="rounded border border-line p-2 text-sm"
+              name="refunded"
+              type="number"
+              min="0"
+              defaultValue="0"
+              className={`${INLINE_INPUT_CLASS} w-24`}
             />
-          </EventForm>
-        ))}
-      </div>
+          </InlineField>
+          <InlineField label="Giữ">
+            <input
+              name="forfeited"
+              type="number"
+              min="0"
+              defaultValue="0"
+              className={`${INLINE_INPUT_CLASS} w-24`}
+            />
+          </InlineField>
+          <input
+            name="resolutionNote"
+            placeholder="Lý do"
+            className="rounded border border-line p-2 text-sm"
+          />
+        </EventForm>
+      ))}
+    </div>
+  );
+}
+
+/** Đơn đã hủy nhưng còn cọc chưa xử lý (thường là cọc giữ chỗ): cho hoàn/giữ cọc. */
+function CancelledDepositSection({ order }: { order: RentalOrderDetail }) {
+  if (order.deposits.every((deposit) => deposit.resolvedAt)) return null;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-ink/70">
+        Đơn đã hủy — hãy hoàn hoặc giữ lại các khoản cọc đã nhận.
+      </p>
+      <DepositResolutionForms order={order} />
+    </div>
+  );
+}
+
+/** Sau khi trả máy: xử lý từng khoản cọc chưa giải quyết, rồi hoàn tất đơn. */
+function SettlementSection({ order }: { order: RentalOrderDetail }) {
+  return (
+    <>
+      <DepositResolutionForms order={order} />
       <EventForm
         orderId={order.id}
         action={completeRentalAction}
