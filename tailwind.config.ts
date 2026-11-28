@@ -5,13 +5,15 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#1C1B19",
+        ink: "#2B2A27",
         paper: "#FAFAF8",
         line: "#E4E1DA",
         accent: "#2B5F52",
+        side: "#1F3F36",
       },
       fontFamily: {
-        sans: ["ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ['"Segoe UI Variable"', '"Segoe UI"', "ui-sans-serif", "system-ui", "sans-serif"],
+        logo: ["var(--font-logo)", "cursive"],
       },
     },
   },

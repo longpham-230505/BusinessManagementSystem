@@ -39,12 +39,9 @@ export default async function SettingsPage({
   ]);
 
   return (
-    <div className="max-w-6xl space-y-10">
+    <div className="mx-auto max-w-6xl space-y-10">
       <header>
-        <h1 className="text-2xl font-semibold">Cài đặt dữ liệu nền</h1>
-        <p className="mt-1 text-sm text-ink/60">
-          Quản lý các dữ liệu dùng chung cho đơn hàng và báo cáo.
-        </p>
+        <h1 className="text-2xl font-medium">Cài đặt dữ liệu nền</h1>
       </header>
 
       <FlashMessages {...flash} />

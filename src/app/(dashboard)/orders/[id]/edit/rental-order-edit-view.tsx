@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/back-link";
 import { notFound } from "next/navigation";
 import { Alert, FlashMessages, type FlashSearchParams } from "@/components/flash-messages";
 import { ORDER_STATUS_LABEL } from "@/lib/labels";
@@ -21,17 +21,10 @@ export async function RentalOrderEditView({ id, flash }: { id: string; flash: Fl
   const permissions = getRentalEditPermissions(order.status);
 
   return (
-    <div className="max-w-4xl space-y-5">
+    <div className="mx-auto max-w-4xl space-y-5">
       <header>
-        <Link href={`/orders/${id}`} className="text-sm text-accent underline">
-          ← {order.orderCode}
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold">Sửa đơn {order.orderCode}</h1>
-        <p className="mt-1 text-sm text-ink/60">
-          Trạng thái hiện tại: <b>{ORDER_STATUS_LABEL[order.status]}</b>.{" "}
-          {describeEditableParts(permissions)} Khi đổi lịch hoặc máy, hệ thống kiểm tra lại trùng
-          lịch và tính lại tiền thuê (máy giữ nguyên dùng giá đã lưu lúc tạo đơn).
-        </p>
+        <BackLink href={`/orders/${id}`} label={order.orderCode} />
+        <h1 className="mt-2 text-2xl font-medium">Sửa đơn {order.orderCode}</h1>
       </header>
 
       <FlashMessages error={flash.error} />

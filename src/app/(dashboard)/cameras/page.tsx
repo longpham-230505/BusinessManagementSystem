@@ -28,14 +28,10 @@ export default async function CamerasPage({
   ]);
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Máy ảnh</h1>
-          <p className="mt-1 text-sm text-ink/60">
-            Tạo và chỉnh sửa tài sản vật lý; giá thuê và số phim còn lại được lưu riêng cho
-            từng máy.
-          </p>
+          <h1 className="text-2xl font-medium">Máy ảnh</h1>
         </div>
         <FormDialog
           triggerLabel="Thêm máy"

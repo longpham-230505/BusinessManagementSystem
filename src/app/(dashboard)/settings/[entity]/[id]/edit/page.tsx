@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/back-link";
 import { notFound } from "next/navigation";
 import { FlashMessages, type FlashSearchParams } from "@/components/flash-messages";
 import { SubmitButton } from "@/components/form-fields";
@@ -39,12 +39,10 @@ export default async function EditSettingsRecordPage({
   if (!loaded) notFound();
 
   return (
-    <div className="max-w-3xl space-y-5">
+    <div className="mx-auto max-w-3xl space-y-5">
       <header>
-        <Link href="/settings" className="text-sm text-accent underline">
-          ← Cài đặt
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold">
+        <BackLink href="/settings" label="Cài đặt" />
+        <h1 className="mt-2 text-2xl font-medium">
           Sửa {ENTITY_TITLE[entity]}: {loaded.record.name}
         </h1>
       </header>

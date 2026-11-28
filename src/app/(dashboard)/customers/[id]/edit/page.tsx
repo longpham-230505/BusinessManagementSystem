@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/back-link";
 import { notFound } from "next/navigation";
 import { CustomerFields } from "@/components/customer-fields";
 import { FlashMessages, type FlashSearchParams } from "@/components/flash-messages";
@@ -18,12 +18,10 @@ export default async function EditCustomerPage({
   if (!customer) notFound();
 
   return (
-    <div className="max-w-4xl space-y-5">
+    <div className="mx-auto max-w-4xl space-y-5">
       <header>
-        <Link href="/customers" className="text-sm text-accent underline">
-          ← Khách hàng
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold">Sửa khách hàng {customer.name}</h1>
+        <BackLink href="/customers" label="Khách hàng" />
+        <h1 className="mt-2 text-2xl font-medium">Sửa khách hàng {customer.name}</h1>
       </header>
 
       <FlashMessages error={flash.error} />
