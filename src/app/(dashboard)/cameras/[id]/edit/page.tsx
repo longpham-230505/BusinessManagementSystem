@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/back-link";
 import { notFound } from "next/navigation";
 import { CameraInstanceFields } from "@/components/camera-instance-fields";
 import { FlashMessages, type FlashSearchParams } from "@/components/flash-messages";
@@ -26,16 +26,10 @@ export default async function EditCameraPage({
   if (!camera) notFound();
 
   return (
-    <div className="max-w-4xl space-y-5">
+    <div className="mx-auto max-w-4xl space-y-5">
       <header>
-        <Link href="/cameras" className="text-sm text-accent underline">
-          ← Máy ảnh
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold">Sửa máy {camera.assetCode}</h1>
-        <p className="mt-1 text-sm text-ink/60">
-          Giá thuê mới chỉ áp dụng cho đơn tạo sau này; đơn cũ giữ giá đã lưu. Đổi cơ sở sẽ tự ghi
-          lại lịch sử chuyển máy.
-        </p>
+        <BackLink href="/cameras" label="Máy ảnh" />
+        <h1 className="mt-2 text-2xl font-medium">Sửa máy {camera.assetCode}</h1>
       </header>
 
       <FlashMessages error={flash.error} />

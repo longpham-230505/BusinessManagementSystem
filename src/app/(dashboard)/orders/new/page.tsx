@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BackLink } from "@/components/back-link";
 
 const ORDER_TYPES = [
   {
@@ -20,13 +21,10 @@ const ORDER_TYPES = [
 
 export default function ChooseOrderTypePage() {
   return (
-    <div className="max-w-4xl space-y-5">
+    <div className="mx-auto max-w-4xl space-y-5">
       <header>
-        <Link href="/orders" className="text-sm text-accent underline">
-          ← Đơn hàng
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold">Tạo đơn mới</h1>
-        <p className="mt-1 text-sm text-ink/60">Chọn loại đơn muốn tạo.</p>
+        <BackLink href="/orders" label="Đơn hàng" />
+        <h1 className="mt-2 text-2xl font-medium">Tạo đơn mới</h1>
       </header>
 
       <div className="grid gap-4 sm:grid-cols-3">

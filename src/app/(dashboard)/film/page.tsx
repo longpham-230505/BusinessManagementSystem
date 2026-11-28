@@ -33,12 +33,9 @@ export default async function FilmInventoryPage({
   }
 
   return (
-    <div className="max-w-6xl space-y-8">
+    <div className="mx-auto max-w-6xl space-y-8">
       <header>
-        <h1 className="text-2xl font-semibold">Kho phim</h1>
-        <p className="mt-1 text-sm text-ink/60">
-          Một kho chung cho mọi cơ sở, quản lý theo lô nhập và trừ theo FIFO.
-        </p>
+        <h1 className="text-2xl font-medium">Kho phim</h1>
       </header>
 
       <FlashMessages {...flash} />

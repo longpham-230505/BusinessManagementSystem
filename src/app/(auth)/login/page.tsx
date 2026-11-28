@@ -25,8 +25,7 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-lg border border-line bg-white p-8 shadow-sm">
-        <h1 className="mb-1 text-xl font-semibold">ABMS</h1>
-        <p className="mb-6 text-sm text-ink/60">Đăng nhập bằng tài khoản nội bộ.</p>
+        <h1 className="mb-6 text-center font-logo text-5xl font-normal text-side">PolaGift</h1>
 
         <form action={formAction} className="space-y-4">
           <div>

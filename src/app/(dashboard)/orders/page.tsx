@@ -18,13 +18,10 @@ export default async function OrdersPage({
   const orders = await listOrders(selectedType);
 
   return (
-    <div className="max-w-6xl space-y-5">
+    <div className="mx-auto max-w-6xl space-y-5">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Đơn hàng</h1>
-          <p className="text-sm text-ink/60">
-            Thuê máy, bán phim và in ảnh.
-          </p>
+          <h1 className="text-2xl font-medium">Đơn hàng</h1>
         </div>
         <Link
           href="/orders/new"

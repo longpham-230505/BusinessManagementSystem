@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BackLink } from "@/components/back-link";
 import { toVnDateTimeLocal } from "@/lib/datetime";
 import { notFound } from "next/navigation";
 import { Alert, FlashMessages, type FlashSearchParams } from "@/components/flash-messages";
@@ -26,16 +26,10 @@ export async function SalesOrderEditView({ id, flash }: { id: string; flash: Fla
   const header = toHeaderValues(order);
 
   return (
-    <div className="max-w-4xl space-y-5">
+    <div className="mx-auto max-w-4xl space-y-5">
       <header>
-        <Link href={`/orders/${id}`} className="text-sm text-accent underline">
-          ← {order.orderCode}
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold">Sửa đơn {order.orderCode}</h1>
-        <p className="mt-1 text-sm text-ink/60">
-          Khi lưu, phim của đơn này được trả về kho rồi phân bổ lại từ tồn kho hiện tại. Giá vốn của
-          các đơn khác không bị tính lại.
-        </p>
+        <BackLink href={`/orders/${id}`} label={order.orderCode} />
+        <h1 className="mt-2 text-2xl font-medium">Sửa đơn {order.orderCode}</h1>
       </header>
 
       <FlashMessages error={flash.error} />

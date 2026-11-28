@@ -29,15 +29,12 @@ export default async function DashboardPage({
   const { cameras, bookings } = await loadCameraTimeline(weekStart);
 
   return (
-    <div className="max-w-7xl space-y-4">
+    <div className="mx-auto max-w-7xl space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">
+          <h1 className="text-2xl font-medium">
             Lịch tuần {formatDayMonth(weekStart, false)} – {formatDayMonth(weekEnd, true)}
           </h1>
-          <p className="mt-1 text-sm text-ink/60">
-            Mỗi dòng là một máy; bấm vào lượt thuê để mở đơn.
-          </p>
         </div>
         <Link
           href="/orders/new/rental"

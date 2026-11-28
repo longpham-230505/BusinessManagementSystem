@@ -16,14 +16,10 @@ export default async function CustomersPage({
   const [customers, flash] = await Promise.all([listCustomers(), searchParams]);
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Khách hàng</h1>
-          <p className="mt-1 text-sm text-ink/60">
-            Số điện thoại không bắt buộc là duy nhất; cần kiểm tra khách trùng trước khi tạo
-            đơn.
-          </p>
+          <h1 className="text-2xl font-medium">Khách hàng</h1>
         </div>
         <FormDialog
           triggerLabel="Thêm khách hàng"

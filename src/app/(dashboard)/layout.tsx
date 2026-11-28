@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { requireSession, logout } from "@/server/auth";
+import { NavLink } from "@/components/nav-link";
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/" },
@@ -15,41 +15,37 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const session = await requireSession();
   return (
     <div className="min-h-screen md:flex">
-      <aside className="border-b border-line bg-white p-4 md:flex md:min-h-screen md:w-56 md:flex-col md:justify-between md:border-b-0 md:border-r">
+      <aside className="bg-side p-4 md:sticky md:pt-7 md:top-0 md:flex md:h-screen md:w-60 md:shrink-0 md:flex-col md:justify-between md:overflow-y-auto">
         <div>
-          <p className="mb-4 px-2 text-sm font-semibold tracking-tight">ABMS</p>
+          <p className="mb-5 px-3 font-logo text-4xl leading-none text-white">PolaGift</p>
           <nav className="flex gap-1 overflow-x-auto md:block md:space-y-1">
             {NAV_ITEMS.map((item) =>
               item.ready === false ? (
                 <span
                   key={item.label}
-                  className="whitespace-nowrap rounded-md px-2 py-1.5 text-sm text-ink/35"
+                  className="block whitespace-nowrap rounded-lg px-3 py-2 text-sm text-white/30"
                   title="Sẽ có ở giai đoạn tiếp theo"
                 >
                   {item.label}
                 </span>
               ) : (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className="block whitespace-nowrap rounded-md px-2 py-1.5 text-sm text-ink/70 hover:bg-accent/10 hover:text-accent"
-                >
+                <NavLink key={item.label} href={item.href}>
                   {item.label}
-                </Link>
+                </NavLink>
               )
             )}
           </nav>
         </div>
-        <div className="mt-3 border-t border-line pt-3">
-          <p className="px-2 text-xs text-ink/50">{session.displayName}</p>
+        <div className="mt-3 border-t border-white/15 pt-3">
+          <p className="px-3 text-xs text-white/60">{session.displayName}</p>
           <form action={logout}>
-            <button className="mt-1 w-full rounded-md px-2 py-1.5 text-left text-sm text-ink/60 hover:bg-ink/5">
+            <button className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm text-white/70 hover:bg-white/10 hover:text-white">
               Đăng xuất
             </button>
           </form>
         </div>
       </aside>
-      <main className="flex-1 p-4 md:p-8">{children}</main>
+      <main className="min-w-0 flex-1 p-4 md:p-8">{children}</main>
     </div>
   );
 }
